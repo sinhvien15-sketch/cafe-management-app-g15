@@ -12,22 +12,33 @@ import {
   X,
   LogOut,
 } from 'lucide-react';
+import { useAuth } from '@/app/lib/auth-context';
 
-const navItems = [
-  { href: '/pos',       label: 'Bán hàng',       icon: ShoppingCart },
-  { href: '/inventory', label: 'Kho nguyên liệu', icon: Package      },
-  { href: '/analytics', label: 'Phân tích',        icon: BarChart3    },
-  { href: '/menu',      label: 'Quản lý menu',    icon: BookOpen     },
+// ── Nav definition ────────────────────────────────────────────────────────────
+
+const ALL_NAV = [
+  { href: '/pos',       label: 'Bán hàng',        icon: ShoppingCart, ownerOnly: false },
+  { href: '/inventory', label: 'Kho nguyên liệu',  icon: Package,      ownerOnly: false },
+  { href: '/analytics', label: 'Phân tích',         icon: BarChart3,    ownerOnly: true  },
+  { href: '/menu',      label: 'Quản lý menu',     icon: BookOpen,     ownerOnly: false },
 ];
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
+  const { user, logout } = useAuth();
+
+  // Staff sees everything except /analytics (ownerOnly = true)
+  const navItems = ALL_NAV.filter((item) =>
+    !item.ownerOnly || user?.role === 'owner',
+  );
 
   return (
     <div className="flex h-screen overflow-hidden">
 
-      {/* ── Mobile backdrop ── */}
+      {/* ── Mobile backdrop ───────────────────────────────────────────────── */}
       {mobileOpen && (
         <div
           className="fixed inset-0 z-30 bg-black/30 md:hidden"
@@ -35,30 +46,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         />
       )}
 
-      {/* ── Sidebar ── */}
+      {/* ── Sidebar ───────────────────────────────────────────────────────── */}
       <aside
         className={[
-          /* base */
           'fixed inset-y-0 left-0 z-40 flex flex-col',
           'bg-surface border-r border-stone-200',
           'transition-transform duration-200 ease-in-out',
-          /* widths */
           'w-60',
-          /* tablet: static, icon-only; desktop: full width */
           'md:static md:w-16 lg:w-60',
-          /* mobile slide toggle */
           mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
         ].join(' ')}
       >
-        {/* Sidebar brand */}
+        {/* Brand */}
         <div className="flex h-16 flex-none items-center justify-between border-b border-stone-200 px-4">
-          {/* Desktop + mobile open: full logo */}
-          <span className="text-h3 font-semibold text-primary md:hidden lg:block">
-            ☕ CaféOS
-          </span>
-          {/* Tablet: icon only */}
+          <span className="text-h3 font-semibold text-primary md:hidden lg:block">☕ CaféOS</span>
           <span className="hidden text-xl md:block lg:hidden">☕</span>
-          {/* Mobile close button */}
           <button
             className="text-muted hover:text-ink md:hidden"
             onClick={() => setMobileOpen(false)}
@@ -72,8 +74,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="flex-1 overflow-y-auto px-2 py-4">
           <ul className="space-y-1">
             {navItems.map((item) => {
-              const active =
-                pathname === item.href || pathname.startsWith(item.href + '/');
+              const active = pathname === item.href || pathname.startsWith(item.href + '/');
               return (
                 <li key={item.href}>
                   <Link
@@ -89,7 +90,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     ].join(' ')}
                   >
                     <item.icon className="h-5 w-5 flex-none" />
-                    {/* Hide label on tablet, show on mobile + desktop */}
                     <span className="md:hidden lg:block">{item.label}</span>
                   </Link>
                 </li>
@@ -97,14 +97,24 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             })}
           </ul>
         </nav>
+
+        {/* Role badge (bottom of sidebar, desktop only) */}
+        {user && (
+          <div className="flex-none border-t border-stone-200 px-4 py-3 md:hidden lg:block">
+            <p className="truncate text-xs font-medium text-ink">{user.name}</p>
+            <p className="mt-0.5 text-xs text-muted capitalize">
+              {user.role === 'owner' ? 'Chủ quán' : 'Nhân viên'}
+            </p>
+          </div>
+        )}
       </aside>
 
-      {/* ── Right column ── */}
+      {/* ── Right column ──────────────────────────────────────────────────── */}
       <div className="flex min-w-0 flex-1 flex-col">
 
         {/* Header */}
         <header className="flex h-16 flex-none items-center justify-between border-b border-stone-200 bg-surface px-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-          {/* Left: hamburger (mobile only) + logo (mobile only) */}
+          {/* Left: hamburger + logo (mobile only) */}
           <div className="flex items-center gap-3">
             <button
               className="text-muted hover:text-ink md:hidden"
@@ -113,15 +123,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Menu className="h-6 w-6" />
             </button>
-            <span className="text-h3 font-semibold text-primary md:hidden">
-              ☕ CaféOS
-            </span>
+            <span className="text-h3 font-semibold text-primary md:hidden">☕ CaféOS</span>
           </div>
 
-          {/* Right: mock user + logout */}
+          {/* Right: username + logout */}
           <div className="flex items-center gap-4">
-            <span className="text-sm font-medium text-ink">Nguyễn Văn A</span>
+            <span className="text-sm font-medium text-ink">
+              {user?.name ?? '…'}
+            </span>
             <button
+              onClick={logout}
               className="flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-danger"
               aria-label="Đăng xuất"
             >

@@ -1,8 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
+import { auth } from '@/app/lib/firebase';
+import { useAuth } from '@/app/lib/auth-context';
 
 // ── Validation ────────────────────────────────────────────────────────────────
 
@@ -10,23 +13,49 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function validate(email: string, password: string) {
   const errors: { email?: string; password?: string } = {};
-  if (!email)                    errors.email    = 'Vui lòng nhập email';
-  else if (!EMAIL_RE.test(email)) errors.email   = 'Email không đúng định dạng';
-  if (!password)                 errors.password = 'Vui lòng nhập mật khẩu';
-  else if (password.length < 6) errors.password  = 'Mật khẩu phải có ít nhất 6 ký tự';
+  if (!email)                     errors.email    = 'Vui lòng nhập email';
+  else if (!EMAIL_RE.test(email)) errors.email    = 'Email không đúng định dạng';
+  if (!password)                  errors.password = 'Vui lòng nhập mật khẩu';
+  else if (password.length < 6)   errors.password = 'Mật khẩu phải có ít nhất 6 ký tự';
   return errors;
+}
+
+function mapFirebaseError(code: string): string {
+  switch (code) {
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found':
+      return 'Email hoặc mật khẩu không chính xác';
+    case 'auth/too-many-requests':
+      return 'Quá nhiều lần thử, vui lòng thử lại sau ít phút';
+    case 'auth/user-disabled':
+      return 'Tài khoản đã bị vô hiệu hóa';
+    case 'auth/network-request-failed':
+      return 'Không có kết nối mạng, vui lòng kiểm tra lại';
+    default:
+      return 'Đăng nhập thất bại, vui lòng thử lại';
+  }
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function LoginPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
 
-  const [email,    setEmail]    = useState('');
-  const [password, setPassword] = useState('');
-  const [touched,  setTouched]  = useState({ email: false, password: false });
-  const [showPw,   setShowPw]   = useState(false);
-  const [loading,  setLoading]  = useState(false);
+  const [email,     setEmail]     = useState('');
+  const [password,  setPassword]  = useState('');
+  const [touched,   setTouched]   = useState({ email: false, password: false });
+  const [showPw,    setShowPw]    = useState(false);
+  const [loading,   setLoading]   = useState(false);
+  const [authError, setAuthError] = useState('');
+
+  // If already authenticated, go straight to POS
+  useEffect(() => {
+    if (!authLoading && user) {
+      router.replace('/pos');
+    }
+  }, [user, authLoading, router]);
 
   const errors  = validate(email, password);
   const isValid = Object.keys(errors).length === 0;
@@ -40,9 +69,16 @@ export default function LoginPage() {
     if (!isValid) return;
 
     setLoading(true);
-    // Phase 1 mock: any valid credentials succeed after 1 s
-    await new Promise((r) => setTimeout(r, 1000));
-    router.push('/pos');
+    setAuthError('');
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      router.replace('/pos');
+    } catch (err: unknown) {
+      const code = (err as { code?: string }).code ?? '';
+      setAuthError(mapFirebaseError(code));
+    } finally {
+      setLoading(false);
+    }
   };
 
   // ── Shared input class builder ─────────────────────────────────────────────
@@ -56,6 +92,16 @@ export default function LoginPage() {
         ? 'border-danger focus:border-danger focus:ring-danger'
         : 'border-stone-200 focus:border-primary focus:ring-primary',
     ].join(' ');
+
+  // Show coffee cup while auth state is resolving (avoids flash of login form)
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-cream">
+        <span className="text-4xl" aria-hidden="true">☕</span>
+        <p className="text-sm text-muted">Đang tải…</p>
+      </div>
+    );
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -89,7 +135,7 @@ export default function LoginPage() {
                   autoComplete="email"
                   placeholder="ten@example.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => { setEmail(e.target.value); setAuthError(''); }}
                   onBlur={() => touch('email')}
                   aria-invalid={!!(touched.email && errors.email)}
                   aria-describedby={touched.email && errors.email ? 'email-error' : undefined}
@@ -116,7 +162,7 @@ export default function LoginPage() {
                   autoComplete="current-password"
                   placeholder="Tối thiểu 6 ký tự"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => { setPassword(e.target.value); setAuthError(''); }}
                   onBlur={() => touch('password')}
                   aria-invalid={!!(touched.password && errors.password)}
                   aria-describedby={touched.password && errors.password ? 'pw-error' : undefined}
@@ -138,6 +184,14 @@ export default function LoginPage() {
               )}
             </div>
 
+            {/* Firebase auth error (wrong credentials, etc.) */}
+            {authError && (
+              <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-danger" role="alert">
+                <AlertCircle className="h-4 w-4 flex-none" />
+                {authError}
+              </div>
+            )}
+
             {/* Submit button */}
             <button
               type="submit"
@@ -157,11 +211,6 @@ export default function LoginPage() {
             </button>
           </form>
         </div>
-
-        {/* Phase 1 hint */}
-        <p className="mt-5 text-center text-xs text-muted">
-          Phase 1 — nhập bất kỳ email hợp lệ và mật khẩu ≥ 6 ký tự để đăng nhập
-        </p>
 
       </div>
     </main>
