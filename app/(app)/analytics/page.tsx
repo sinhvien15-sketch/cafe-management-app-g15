@@ -1,100 +1,159 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from 'recharts';
 import {
-  TrendingUp,
-  TrendingDown,
-  ShoppingBag,
-  Award,
-  AlertTriangle,
-  BarChart2,
+  TrendingUp, TrendingDown, ShoppingBag, Award,
+  AlertTriangle, BarChart2, RefreshCw, AlertCircle,
 } from 'lucide-react';
+import { db } from '@/app/lib/firebase';
+import type { Order, Ingredient } from '@/app/lib/types';
 
-// ── Mock data ─────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-const HOURLY_REVENUE = [
-  { hour: 8,  revenue:  85000 },
-  { hour: 9,  revenue: 195000 },
-  { hour: 10, revenue: 175000 },
-  { hour: 11, revenue: 130000 },
-  { hour: 12, revenue: 290000 },
-  { hour: 13, revenue: 265000 },
-  { hour: 14, revenue: 150000 },
-  { hour: 15, revenue: 110000 },
-  { hour: 16, revenue: 145000 },
-  { hour: 17, revenue: 200000 },
-  { hour: 18, revenue: 240000 },
-  { hour: 19, revenue: 195000 },
-  { hour: 20, revenue: 140000 },
-  { hour: 21, revenue:  95000 },
-  { hour: 22, revenue:  60000 },
-];
+interface AnalyticsData {
+  totalRevenue:    number;
+  orderCount:      number;
+  bestSelling:     string;
+  bestSellingQty:  number;
+  lowStockCount:   number;
+  hourlyRevenue:   { hour: number; revenue: number }[];
+  topItems:        { name: string; qty: number }[];
+  paymentData:     { name: string; value: number }[];
+}
 
-const PAYMENT_DATA = [
-  { name: 'Tiền mặt',     value: 22 },
-  { name: 'Chuyển khoản', value: 16 },
-];
-
-const TOP_ITEMS = [
-  { name: 'Cà phê sữa',     qty: 15 },
-  { name: 'Cà phê đen',     qty: 12 },
-  { name: 'Trà đào cam sả', qty: 9  },
-  { name: 'Sinh tố bơ',     qty: 7  },
-  { name: 'Bạc xỉu',        qty: 6  },
-];
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const PIE_COLORS = ['#92400E', '#D97706'];
 
+const TOOLTIP_STYLE = {
+  borderRadius: '8px',
+  border: '1px solid #e7e5e4',
+  fontSize: '13px',
+  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const formatVND  = (n: number) => new Intl.NumberFormat('vi-VN').format(n) + 'đ';
-const fmtYAxis   = (v: number) => `${(v / 1000).toFixed(0)}k`;
+const formatVND = (n: number) => new Intl.NumberFormat('vi-VN').format(n) + 'đ';
+const fmtYAxis  = (v: number) => `${(v / 1000).toFixed(0)}k`;
+
+// ── Data fetching ─────────────────────────────────────────────────────────────
+
+async function loadAnalytics(): Promise<AnalyticsData> {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  // Fetch today's orders and all ingredients in parallel
+  const [ordersSnap, ingSnap] = await Promise.all([
+    getDocs(
+      query(
+        collection(db, 'orders'),
+        where('createdAt', '>=', Timestamp.fromDate(startOfToday)),
+      ),
+    ),
+    getDocs(collection(db, 'ingredients')),
+  ]);
+
+  const orders = ordersSnap.docs.map((d) => d.data() as Order);
+
+  // ── KPI: revenue + order count ─────────────────────────────────────────────
+  const totalRevenue = orders.reduce((s, o) => s + o.totalAmount, 0);
+  const orderCount   = orders.length;
+
+  // ── Revenue by hour (slots 8–22, filled with 0 for empty hours) ────────────
+  const hourMap = new Map<number, number>();
+  for (const o of orders) {
+    const h = o.createdAt.toDate().getHours();
+    hourMap.set(h, (hourMap.get(h) ?? 0) + o.totalAmount);
+  }
+  const hourlyRevenue = Array.from({ length: 15 }, (_, i) => ({
+    hour:    i + 8,
+    revenue: hourMap.get(i + 8) ?? 0,
+  }));
+
+  // ── Top 5 items by total quantity sold ─────────────────────────────────────
+  const itemMap = new Map<string, { name: string; qty: number }>();
+  for (const o of orders) {
+    for (const item of o.items) {
+      const cur = itemMap.get(item.menuItemId);
+      if (cur) cur.qty += item.quantity;
+      else itemMap.set(item.menuItemId, { name: item.name, qty: item.quantity });
+    }
+  }
+  const topItems = Array.from(itemMap.values())
+    .sort((a, b) => b.qty - a.qty)
+    .slice(0, 5);
+
+  const bestSelling    = topItems[0]?.name ?? '—';
+  const bestSellingQty = topItems[0]?.qty ?? 0;
+
+  // ── Payment method distribution ────────────────────────────────────────────
+  const payMap = { cash: 0, bank_transfer: 0 };
+  for (const o of orders) payMap[o.paymentMethod]++;
+  const paymentData = [
+    { name: 'Tiền mặt',     value: payMap.cash          },
+    { name: 'Chuyển khoản', value: payMap.bank_transfer  },
+  ].filter((d) => d.value > 0);
+
+  // ── Low-stock ingredients ──────────────────────────────────────────────────
+  // Firestore cannot compare two fields in a single where() clause, so we
+  // fetch all ingredients and filter client-side (small collection, acceptable).
+  const lowStockCount = ingSnap.docs.filter((d) => {
+    const ing = d.data() as Ingredient;
+    return ing.currentStock < ing.minThreshold;
+  }).length;
+
+  return {
+    totalRevenue, orderCount, bestSelling, bestSellingQty,
+    lowStockCount, hourlyRevenue, topItems, paymentData,
+  };
+}
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 type KpiProps = {
-  label: string;
-  value: string;
-  sub?: string;
-  delta?: string;
-  deltaUp?: boolean;
-  icon: React.ReactNode;
-  iconBg?: string;
-  href?: string;
+  label:     string;
+  value:     string;
+  sub?:      string;
+  delta?:    string;
+  deltaUp?:  boolean;
+  icon:      React.ReactNode;
+  iconBg?:   string;
+  href?:     string;
+  skeleton?: boolean;
 };
 
-function KpiCard({ label, value, sub, delta, deltaUp, icon, iconBg = 'bg-primary/10 text-primary', href }: KpiProps) {
+function KpiCard({
+  label, value, sub, delta, deltaUp,
+  icon, iconBg = 'bg-primary/10 text-primary', href, skeleton,
+}: KpiProps) {
   const inner = (
     <div className="flex h-full flex-col rounded-xl border border-stone-100 bg-surface p-5 shadow-card">
-      {/* pr-11 reserves 44 px on the right for the icon; min-h ensures the
-          container is never shorter than the icon (36 px) even on 1-line labels */}
       <div className="relative mb-3 min-h-[2.5rem] pr-11">
         <span className={`absolute right-0 top-0 rounded-lg p-2 ${iconBg}`}>{icon}</span>
         <p className="text-xs font-medium text-muted">{label}</p>
       </div>
-      <p className="break-words text-xl font-bold text-ink sm:text-2xl">{value}</p>
-      {sub && <p className="mt-0.5 text-xs text-muted">{sub}</p>}
-      {delta && (
-        <p className={`mt-2 flex items-center gap-0.5 text-xs font-medium ${deltaUp ? 'text-accent' : 'text-danger'}`}>
-          {deltaUp
-            ? <TrendingUp  className="h-3.5 w-3.5 flex-none" />
-            : <TrendingDown className="h-3.5 w-3.5 flex-none" />}
-          {delta}
-        </p>
+      {skeleton ? (
+        <div className="mt-1 h-7 w-3/4 animate-pulse rounded bg-stone-100" />
+      ) : (
+        <>
+          <p className="break-words text-xl font-bold text-ink sm:text-2xl">{value}</p>
+          {sub && <p className="mt-0.5 text-xs text-muted">{sub}</p>}
+          {delta && (
+            <p className={`mt-2 flex items-center gap-0.5 text-xs font-medium ${deltaUp ? 'text-accent' : 'text-danger'}`}>
+              {deltaUp
+                ? <TrendingUp  className="h-3.5 w-3.5 flex-none" />
+                : <TrendingDown className="h-3.5 w-3.5 flex-none" />}
+              {delta}
+            </p>
+          )}
+        </>
       )}
     </div>
   );
@@ -117,64 +176,107 @@ function EmptyState() {
   );
 }
 
-const TOOLTIP_STYLE = {
-  borderRadius: '8px',
-  border: '1px solid #e7e5e4',
-  fontSize: '13px',
-  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-};
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AnalyticsPage() {
-  const [mounted, setMounted] = useState(false);
+  const [mounted,     setMounted]     = useState(false);
+  const [loading,     setLoading]     = useState(true);
+  const [fetchError,  setFetchError]  = useState(false);
+  const [data,        setData]        = useState<AnalyticsData | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [refreshing,  setRefreshing]  = useState(false);
+
+  // Recharts uses browser APIs — must wait for client mount before rendering
   useEffect(() => { setMounted(true); }, []);
 
-  // Phase 2: replace with real check — orders.length > 0 for today
-  const hasData = true;
+  const fetch = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    setFetchError(false);
+    try {
+      const result = await loadAnalytics();
+      setData(result);
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.error('Analytics fetch failed:', err);
+      setFetchError(true);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const hasData = (data?.orderCount ?? 0) > 0;
+
+  const updatedLabel = lastUpdated
+    ? `Cập nhật lúc ${lastUpdated.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
+    : 'Đang tải…';
+
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <>
-      {/* Page header */}
-      <div className="mb-6">
-        <h1 className="text-h1 font-semibold text-ink">Phân tích</h1>
-        <p className="mt-1 text-sm text-muted">Dữ liệu hôm nay</p>
+      {/* ── Page header ───────────────────────────────────────────────────── */}
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-h1 font-semibold text-ink">Phân tích</h1>
+          <p className="mt-1 text-sm text-muted">Dữ liệu hôm nay · {updatedLabel}</p>
+        </div>
+        <button
+          onClick={() => fetch(true)}
+          disabled={loading || refreshing}
+          className="flex items-center gap-1.5 rounded-lg border border-stone-200 bg-surface px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-stone-50 disabled:opacity-50"
+          aria-label="Làm mới dữ liệu"
+        >
+          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          Làm mới
+        </button>
       </div>
+
+      {/* ── Fetch error banner ─────────────────────────────────────────────── */}
+      {fetchError && (
+        <div className="mb-5 flex items-center gap-2.5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-danger">
+          <AlertCircle className="h-4 w-4 flex-none" />
+          Không thể tải dữ liệu — kiểm tra kết nối rồi nhấn Làm mới.
+        </div>
+      )}
 
       {/* ── KPI cards ─────────────────────────────────────────────────────── */}
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard
           label="Doanh thu hôm nay"
-          value="2.450.000đ"
-          delta="+12% so với hôm qua"
-          deltaUp
+          value={data ? formatVND(data.totalRevenue) : '—'}
           icon={<TrendingUp className="h-5 w-5" />}
+          skeleton={loading}
         />
         <KpiCard
           label="Số đơn hàng"
-          value="38"
-          delta="+5 so với hôm qua"
-          deltaUp
+          value={data ? String(data.orderCount) : '—'}
           icon={<ShoppingBag className="h-5 w-5" />}
+          skeleton={loading}
         />
         <KpiCard
           label="Món bán chạy nhất"
-          value="Cà phê sữa"
-          sub="15 đơn"
+          value={data ? data.bestSelling : '—'}
+          sub={data && data.bestSellingQty > 0 ? `${data.bestSellingQty} đơn` : undefined}
           icon={<Award className="h-5 w-5" />}
+          skeleton={loading}
         />
         <KpiCard
           label="Nguyên liệu sắp hết"
-          value="2 mục"
-          sub="Nhấn để xem chi tiết"
+          value={data ? (data.lowStockCount > 0 ? `${data.lowStockCount} mục` : 'Đủ hàng') : '—'}
+          sub={data && data.lowStockCount > 0 ? 'Nhấn để xem chi tiết' : undefined}
           icon={<AlertTriangle className="h-5 w-5" />}
           iconBg="bg-warning/10 text-warning"
-          href="/inventory"
+          href={data && data.lowStockCount > 0 ? '/inventory' : undefined}
+          skeleton={loading}
         />
       </div>
 
       {/* ── Charts ────────────────────────────────────────────────────────── */}
-      {hasData ? (
+      {!loading && (hasData ? (
         <div className="space-y-6">
 
           {/* Revenue by hour */}
@@ -183,7 +285,7 @@ export default function AnalyticsPage() {
             {mounted ? (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart
-                  data={HOURLY_REVENUE}
+                  data={data!.hourlyRevenue}
                   margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" vertical={false} />
@@ -202,7 +304,7 @@ export default function AnalyticsPage() {
                     width={42}
                   />
                   <Tooltip
-                    formatter={(value: number | string) => [formatVND(Number(value)), 'Doanh thu']}
+                    formatter={(v: number | string) => [formatVND(Number(v)), 'Doanh thu']}
                     labelFormatter={(h) => `${h}:00 – ${Number(h) + 1}:00`}
                     contentStyle={TOOLTIP_STYLE}
                   />
@@ -214,7 +316,7 @@ export default function AnalyticsPage() {
             )}
           </div>
 
-          {/* Bottom row: top items + payment pie */}
+          {/* Bottom row */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
 
             {/* Top 5 best-selling items */}
@@ -223,7 +325,7 @@ export default function AnalyticsPage() {
               {mounted ? (
                 <ResponsiveContainer width="100%" height={240}>
                   <BarChart
-                    data={TOP_ITEMS}
+                    data={data!.topItems}
                     layout="vertical"
                     margin={{ top: 0, right: 16, left: 0, bottom: 0 }}
                   >
@@ -243,7 +345,7 @@ export default function AnalyticsPage() {
                       tickLine={false}
                     />
                     <Tooltip
-                      formatter={(value: number | string) => [Number(value) + ' đơn', 'Số lượng']}
+                      formatter={(v: number | string) => [Number(v) + ' đơn', 'Số lượng']}
                       contentStyle={TOOLTIP_STYLE}
                     />
                     <Bar dataKey="qty" fill="#D97706" radius={[0, 4, 4, 0]} maxBarSize={28} />
@@ -261,7 +363,7 @@ export default function AnalyticsPage() {
                 <ResponsiveContainer width="100%" height={240}>
                   <PieChart>
                     <Pie
-                      data={PAYMENT_DATA}
+                      data={data!.paymentData}
                       dataKey="value"
                       nameKey="name"
                       cx="50%"
@@ -269,7 +371,7 @@ export default function AnalyticsPage() {
                       outerRadius={78}
                       strokeWidth={0}
                     >
-                      {PAYMENT_DATA.map((_, i) => (
+                      {data!.paymentData.map((_, i) => (
                         <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                       ))}
                     </Pie>
@@ -281,7 +383,7 @@ export default function AnalyticsPage() {
                       )}
                     />
                     <Tooltip
-                      formatter={(value: number | string, name: string) => [Number(value) + ' đơn', name]}
+                      formatter={(v: number | string, name: string) => [Number(v) + ' đơn', name]}
                       contentStyle={TOOLTIP_STYLE}
                     />
                   </PieChart>
@@ -294,7 +396,27 @@ export default function AnalyticsPage() {
           </div>
         </div>
       ) : (
-        <EmptyState />
+        !fetchError && <EmptyState />
+      ))}
+
+      {/* Chart skeletons while loading */}
+      {loading && (
+        <div className="space-y-6">
+          <div className="rounded-xl border border-stone-100 bg-surface p-5 shadow-card">
+            <div className="mb-5 h-5 w-48 animate-pulse rounded bg-stone-100" />
+            <ChartSkeleton height={300} />
+          </div>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div className="rounded-xl border border-stone-100 bg-surface p-5 shadow-card lg:col-span-2">
+              <div className="mb-5 h-5 w-40 animate-pulse rounded bg-stone-100" />
+              <ChartSkeleton height={240} />
+            </div>
+            <div className="rounded-xl border border-stone-100 bg-surface p-5 shadow-card">
+              <div className="mb-5 h-5 w-36 animate-pulse rounded bg-stone-100" />
+              <ChartSkeleton height={240} />
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
