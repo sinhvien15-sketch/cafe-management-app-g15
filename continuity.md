@@ -4,23 +4,24 @@
 Build MVP 3 modules (POS, Inventory, Analytics) according to CAFE_APP_SPEC.md, deploy Vercel.
 
 ## Current Status
-Phase 1 — POS page (section 1.3 complete)
+Phase 1 — Inventory page (section 1.4 complete)
 
 ## Completed
 - Phase 1.1: Theme tokens in globals.css, Inter font (latin + vietnamese)
-- Phase 1.2: App shell — AppShell.tsx (header + responsive sidebar), route group (app)/,
-  root page redirects to /pos
-- Phase 1.3: /pos page with mock data
-  - app/lib/constants.ts: MenuItem, CartItem types, CATEGORIES, MOCK_MENU_ITEMS (12 items)
-  - 2-column layout: item grid (flex-1) + sticky cart panel (w-[320px])
-  - Category filter tabs with active underline
-  - Item cards: hover lift, out-of-stock badge + opacity + disabled, green ring pulse on add
-  - Cart: qty +/- controls, delete, total, payment method select
-  - Order confirmation modal (summary → Hoàn thành / Hủy)
-  - Success toast (auto-dismiss 3s), cart resets, order counter ORD-0001 etc.
+- Phase 1.2: App shell — AppShell.tsx (header + responsive sidebar), route group (app)/
+- Phase 1.3: /pos page — item grid, category tabs, cart, modal, toast
+- Phase 1.4: /inventory page with mock data
+  - constants.ts: added Ingredient type + MOCK_INGREDIENTS (8 items)
+  - Sortable table: name + currentStock columns (3-state: asc → desc → reset)
+  - Search input filters by ingredient name
+  - Status badges: Còn hàng (green) / Sắp hết (amber) / Hết hàng (red)
+  - Row highlighting: amber-50 for low stock, red-50 for out of stock
+  - Alert banner at top: counts out/low stock items
+  - "Nhập hàng" button → restock modal (qty input, validation, Enter key support)
+  - Toast confirms successful restock, updates state in-place
 
 ## Next Steps
-- Phase 1.4: /inventory page — sortable/filterable table, status badges, restock modal
+- Phase 1.5: /analytics page — KPI cards + recharts bar/pie/horizontal-bar + empty state
 
 ## Known Issues / Blockers
 - None
@@ -28,8 +29,7 @@ Phase 1 — POS page (section 1.3 complete)
 ## Key Decisions
 - Tailwind v4: all tokens in globals.css @theme (no tailwind.config.ts)
 - @/* alias maps to project root (tsconfig paths)
-- Route group (app) for shell pages; login will be app/login/page.tsx (Phase 1.6)
-- AppShell single 'use client' component; page children stay as Server Components
-- Mock data in app/lib/constants.ts; will be replaced by Firestore in Phase 2
+- Route group (app) for shell pages; login at app/login/ (Phase 1.6)
+- Mock data in app/lib/constants.ts; Firestore in Phase 2
 - Use Firestore runTransaction for inventory deduction (Phase 2)
 - Auth: single Firebase Auth, role field in users collection (Phase 2)
