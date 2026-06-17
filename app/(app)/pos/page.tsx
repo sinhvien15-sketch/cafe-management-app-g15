@@ -73,7 +73,7 @@ export default function PosPage() {
   return (
     <>
       {/* ── 2-column layout ─────────────────────────────────────────────────── */}
-      <div className="flex items-start gap-6">
+      <div className="flex flex-col gap-6 md:flex-row md:items-start">
 
         {/* Left column — menu items */}
         <div className="min-w-0 flex-1">
@@ -130,9 +130,9 @@ export default function PosPage() {
         </div>
 
         {/* Right column — cart */}
-        <div className="w-[320px] flex-none">
-          <div className="sticky top-0">
-            <div className="flex max-h-[calc(100vh-8rem)] flex-col rounded-xl border border-stone-100 bg-surface shadow-card">
+        <div className="w-full flex-none md:w-[320px]">
+          <div className="md:sticky md:top-0">
+            <div className="flex flex-col rounded-xl border border-stone-100 bg-surface shadow-card md:max-h-[calc(100vh-8rem)]">
 
               {/* Cart header */}
               <div className="flex flex-none items-center gap-2 border-b border-stone-100 px-5 py-4">
