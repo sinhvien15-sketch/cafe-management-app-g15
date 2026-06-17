@@ -4,26 +4,31 @@
 Build MVP 3 modules (POS, Inventory, Analytics) according to CAFE_APP_SPEC.md, deploy Vercel.
 
 ## Current Status
-Phase 1 — Theme & design tokens (section 1.1 complete)
+Phase 1 — App shell layout (section 1.2 complete)
 
 ## Completed
 - Set up Next.js + TypeScript + Tailwind project
-- CAFE_APP_SPEC.md and MASTER_PLAN.md created at project root
-- Phase 1.1: Theme applied
-  - globals.css: Tailwind v4 @theme tokens (brand colours, surface colours, shadows,
-    typography scale helpers, CSS variables for card-padding / section-gap / radii)
-  - layout.tsx: switched to Inter font (latin + vietnamese subsets), CaféOS metadata,
-    lang="vi"
+- Phase 1.1: Theme tokens in globals.css (@theme, typography helpers, CSS variables)
+  Inter font (latin + vietnamese), CaféOS metadata, lang="vi"
+- Phase 1.2: App shell layout
+  - app/components/AppShell.tsx — Client Component: sticky header, responsive sidebar
+    (full 240px on desktop, icon-only 64px on tablet, hidden+hamburger on mobile),
+    mock user "Nguyễn Văn A", logout button, active nav highlight
+  - app/(app)/layout.tsx — wraps all app pages with AppShell
+  - Route group app/(app)/ with placeholder pages for pos, inventory, analytics, menu
+  - app/page.tsx redirects to /pos
 
 ## Next Steps
-- Phase 1.2: App shell layout (Header + Sidebar + Container in layout.tsx)
+- Phase 1.3: /pos page — 2-column layout (item grid + cart) with mock data
 
 ## Known Issues / Blockers
 - None
 
 ## Key Decisions
-- Tailwind v4 installed — no tailwind.config.ts; all design tokens live in globals.css
-  using the @theme directive (Tailwind v4 convention, not v3)
-- Inter font with vietnamese subset chosen to support Vietnamese diacritics (Level 5 test)
-- Use Firestore runTransaction for inventory deduction logic to avoid race conditions
-- Auth: single Firebase Auth system, permissions via role field in users collection
+- Tailwind v4: all tokens in globals.css @theme (no tailwind.config.ts)
+- Inter font with vietnamese subset for Vietnamese diacritics support
+- Route group (app) separates shell pages from future (auth)/login page (Phase 1.6)
+- AppShell is a single 'use client' component; children (page content) remain Server Components
+- Sidebar responsive: CSS-only for tablet (md:w-16 / lg:w-60); JS useState for mobile overlay
+- Use Firestore runTransaction for inventory deduction logic (Phase 2)
+- Auth: single Firebase Auth, role field in users collection (Phase 2)
