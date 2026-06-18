@@ -99,6 +99,7 @@ export default function InventoryPage() {
       (snap) => {
         setIngredients(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Ingredient) })));
         setLoading(false);
+        setLoadError(false);   // clear any previous network error on reconnect
       },
       () => {
         setLoadError(true);

@@ -46,6 +46,7 @@ export default function PosPage() {
       (snap) => {
         setMenuItems(snap.docs.map((d) => ({ id: d.id, ...(d.data() as MenuItem) })));
         setLoadingMenu(false);
+        setMenuError(false);   // clear any previous network error on reconnect
       },
       () => {
         setMenuError(true);
