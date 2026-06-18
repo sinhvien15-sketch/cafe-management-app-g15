@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
 import {
@@ -12,6 +13,7 @@ import {
   AlertTriangle, BarChart2, RefreshCw, AlertCircle,
 } from 'lucide-react';
 import { db } from '@/app/lib/firebase';
+import { useAuth } from '@/app/lib/auth-context';
 import type { Order, Ingredient } from '@/app/lib/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -179,12 +181,22 @@ function EmptyState() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AnalyticsPage() {
+  const router  = useRouter();
+  const { user } = useAuth();
+
   const [mounted,     setMounted]     = useState(false);
   const [loading,     setLoading]     = useState(true);
   const [fetchError,  setFetchError]  = useState(false);
   const [data,        setData]        = useState<AnalyticsData | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [refreshing,  setRefreshing]  = useState(false);
+
+  // Staff cannot access analytics — redirect to POS if role is not owner
+  useEffect(() => {
+    if (user && user.role !== 'owner') {
+      router.replace('/pos');
+    }
+  }, [user, router]);
 
   // Recharts uses browser APIs — must wait for client mount before rendering
   useEffect(() => { setMounted(true); }, []);
