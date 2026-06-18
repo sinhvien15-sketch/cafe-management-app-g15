@@ -315,7 +315,7 @@ export default function AnalyticsPage() {
                     width={42}
                   />
                   <Tooltip
-                    formatter={(v: number | string) => [formatVND(Number(v)), 'Doanh thu']}
+                    formatter={(v) => [typeof v === 'number' ? formatVND(v) : '—', 'Doanh thu']}
                     labelFormatter={(h) => `${h}:00 – ${Number(h) + 1}:00`}
                     contentStyle={TOOLTIP_STYLE}
                   />
@@ -356,7 +356,7 @@ export default function AnalyticsPage() {
                       tickLine={false}
                     />
                     <Tooltip
-                      formatter={(v: number | string) => [Number(v) + ' đơn', 'Số lượng']}
+                      formatter={(v) => [typeof v === 'number' ? v + ' đơn' : '—', 'Số lượng']}
                       contentStyle={TOOLTIP_STYLE}
                     />
                     <Bar dataKey="qty" fill="#D97706" radius={[0, 4, 4, 0]} maxBarSize={28} />
@@ -394,7 +394,7 @@ export default function AnalyticsPage() {
                       )}
                     />
                     <Tooltip
-                      formatter={(v: number | string, name: string) => [Number(v) + ' đơn', name]}
+                      formatter={(v, name) => [typeof v === 'number' ? v + ' đơn' : '—', name]}
                       contentStyle={TOOLTIP_STYLE}
                     />
                   </PieChart>
