@@ -1,0 +1,67 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Read the role field from the users collection for the current user.
+    // get() runs inside the rules engine — never called from app code.
+    // If the users document doesn't exist this returns null, and isOwner() → false.
+    function getRole() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : null;
+    }
+
+    function isLoggedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner() {
+      return isLoggedIn() && getRole() == 'owner';
+    }
+
+    // ── orders ────────────────────────────────────────────────────────────────
+    // Any logged-in user (staff or owner) can create and read orders.
+    // No update or delete — order history must stay immutable.
+    match /orders/{orderId} {
+      allow read, create: if isLoggedIn();
+      allow update, delete: if false;
+    }
+
+    // ── ingredients ───────────────────────────────────────────────────────────
+    // Any logged-in user can READ and UPDATE (stock deduction in POS transaction,
+    // restock in inventory page — both are staff operations).
+    // Only owner can CREATE new ingredients or DELETE them (catalog management).
+    match /ingredients/{ingredientId} {
+      allow read, update: if isLoggedIn();
+      allow create, delete: if isOwner();
+    }
+
+    // ── menu_items ────────────────────────────────────────────────────────────
+    // Same split as ingredients:
+    // - Any logged-in user can READ and UPDATE (setting available = false/true
+    //   after stock changes — triggered by POS order flow and restock).
+    // - Only owner can CREATE or DELETE menu items (managing the catalog).
+    match /menu_items/{menuItemId} {
+      allow read, update: if isLoggedIn();
+      allow create, delete: if isOwner();
+    }
+
+    // ── stock_transactions ────────────────────────────────────────────────────
+    // Any logged-in user can create audit records and read them.
+    // No update or delete — audit trail must stay immutable.
+    match /stock_transactions/{txId} {
+      allow read, create: if isLoggedIn();
+      allow update, delete: if false;
+    }
+
+    // ── users ─────────────────────────────────────────────────────────────────
+    // A user can only read their own profile document.
+    // Writes are blocked from the client — user documents are created
+    // manually in the Firebase Console or via the Admin SDK only.
+    match /users/{userId} {
+      allow read: if isLoggedIn() && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+  }
+}
