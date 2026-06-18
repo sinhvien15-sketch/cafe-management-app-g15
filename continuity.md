@@ -9,7 +9,9 @@ Academic project for the F&B Digital Transformation course — Hanoi School of B
 ## Current Status
 **Phase 1 — COMPLETE** (UI with mock data, tested at 375px / 768px / 1440px)
 **Phase 2 — COMPLETE** (Firebase backend fully integrated, all 8 sections done and tested)
-**Phase 3 — NOT STARTED** (next step when returning to the project)
+**Phase 3 — COMPLETE** (Security rules, optimization, deployed to Vercel)
+
+**PROJECT COMPLETE — Live URL: https://cafe-management-app-g15.vercel.app**
 
 ---
 
@@ -32,22 +34,17 @@ Academic project for the F&B Digital Transformation course — Hanoi School of B
 - 2.7: Real Firebase Auth — `signInWithEmailAndPassword`, reads `users/{uid}` for name + role, AuthContext, AuthGuard, role-based nav, real logout
 - 2.8: Full testing checklist passed (Level 1, 2, 3) — including concurrent-order race condition test
 
----
-
-## Next Steps — Phase 3
-
-Start with **3.1**, then do 3.2 → 3.3 → 3.4 → 3.5 in order:
-
-- **3.1 Firestore Security Rules** — lock down per role and collection (this is the most involved step; requires `get()` inside rules to look up user role)
-- **3.2 Security review** — audit for hardcoded keys, confirm `.gitignore`, review client-side validation, remove any `console.log` with sensitive data
-- **3.3 Optimization** — verify `onSnapshot` unsubscribes on unmount, audit loading/error states across all pages, Lighthouse score on `/pos`
-- **3.4 Testing checklist** — browser testing (Chrome / Safari / Firefox), performance, security scenarios
-- **3.5 Deploy to Vercel** — push to GitHub, import to Vercel, set all `NEXT_PUBLIC_FIREBASE_*` env vars, deploy, re-test live URL
+## Phase 3 — Completed
+- 3.1: `firestore.rules` — role-based Security Rules using `get()` to look up `users/{uid}`; `firebase.json` + `firestore.indexes.json` created
+- 3.2: Security audit — no hardcoded keys confirmed, `.env.local` never committed, all forms validated, 3 `console.error(err)` calls removed from production pages (exposed Firebase internals)
+- 3.3: Optimization — fixed `onSnapshot` error-flag not clearing on reconnect (bug in `/pos` and `/inventory`); all pages have loading skeletons and friendly error states; Lighthouse `/pos`: Performance 88, FCP 0.2s, LCP 2.2s, TBT 20ms
+- 3.4: Testing checklist — Firefox full flow passed; logout → direct URL redirect confirmed on all 3 routes; staff blocked from `/analytics` via nav AND direct URL (route-level `useEffect` redirect added); all 14 Firestore Rules Playground tests passed
+- 3.5: Deployed to Vercel — full smoke-test on live URL passed (login, order creation, stock deduction, role access, security)
 
 ---
 
 ## Known Issues / Blockers
-- None. All pages functional with real data.
+- None. All pages functional on both localhost and the live Vercel deployment.
 
 ---
 
@@ -68,19 +65,18 @@ Start with **3.1**, then do 3.2 → 3.3 → 3.4 → 3.5 in order:
 - **Post-transaction writes** for `stock_transactions` (type `deduction`) and menu item `available = false` are done *after* the transaction resolves — they don't need to be inside it because they're audit/display data, not the critical atomic update.
 - **Stale state in restock** (Phase 2.5): after `updateDoc`, `onSnapshot` hasn't fired yet. The availability-restore check uses the locally computed `newStock` for the restocked ingredient, not `ingredients` state which is still stale at that point.
 
-### Authentication & Authorization
-- **Firebase Auth + Firestore users collection**: Auth handles identity (email/password), Firestore `users/{uid}` stores `{ name, role, email, createdAt }`. Role is NOT stored in the Auth token — it requires a Firestore read after sign-in.
-- **`AuthProvider`** in `app/lib/auth-context.tsx`: wraps the root layout, listens to `onAuthStateChanged`, reads `users/{uid}`, exposes `{ user, loading, logout }` via Context.
-- **`AuthGuard`** in `app/components/AuthGuard.tsx`: Client Component wrapping the `(app)` layout. Shows a ☕ loading screen while Firebase resolves the persisted session; redirects to `/login` if no user. This prevents the flash of protected content before redirect.
-- **Role-based nav**: `staff` sees /pos, /inventory, /menu (3 items). `owner` sees all 4 including /analytics. Enforced in `AppShell.tsx` by filtering `ALL_NAV` on `ownerOnly` flag.
-- **Test accounts**: `owner@cafe.com` (role: owner), `staff@cafe.com` (role: staff) — created in Firebase Console.
-- **`staffId` in orders**: uses `auth.currentUser?.uid` (real UID since Phase 2.7).
+### Security (Phase 3)
+- **Firestore Security Rules** in `firestore.rules`: role checked via `get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role`. `orders` and `stock_transactions` are append-only (create allowed, update/delete denied). `ingredients`/`menu_items` allow update by any logged-in user (needed for stock ops) but create/delete only by owner. `users` documents are read-only from the client.
+- **Analytics route guard**: `/analytics/page.tsx` contains a `useEffect` that redirects non-owner users to `/pos`, complementing the nav-level hide in `AppShell.tsx`. Double-layer: UI hides the link + route rejects direct access.
+- **`console.error` removal**: raw Firebase error objects can expose Firestore document paths in DevTools; all three production error handlers use anonymous `catch {}` and show only a generic Vietnamese toast.
+- **recharts `Tooltip` formatter type fix**: production TypeScript build requires `ValueType` (which includes `readonly (string | number)[]`); removed explicit `number | string` annotations, used `typeof v === 'number'` guards instead.
 
 ### UI Patterns
 - **recharts SSR guard**: `const [mounted, setMounted] = useState(false)` + `useEffect(() => setMounted(true), [])`. Render `<ChartSkeleton>` on server, swap to real chart after mount. Without this, recharts throws hydration errors.
 - **KPI card icon positioning**: icon uses `absolute right-0 top-0` inside a `relative pr-11 min-h-[2.5rem]` container — prevents the icon from overlapping long label text on narrow (2-col) grid cards.
 - **VND formatting**: `new Intl.NumberFormat('vi-VN').format(n) + 'đ'` — produces `25.000đ` format.
 - **`submitting` state on POS confirm**: disables both the "Xác nhận thanh toán" button AND the modal "Hoàn thành" button during the transaction to prevent double-submission.
+- **`onSnapshot` reconnect fix**: both `/pos` and `/inventory` success callbacks call `setMenuError(false)` / `setLoadError(false)` to clear the error banner when the network recovers after a drop.
 
 ### File Map (key files)
 ```
@@ -95,13 +91,16 @@ app/
     AuthGuard.tsx        — Route protection wrapper
   (app)/
     layout.tsx           — AuthGuard > AppShell > {children}
-    pos/page.tsx         — POS with runTransaction
-    inventory/page.tsx   — Inventory with onSnapshot + restock
-    analytics/page.tsx   — Analytics with getDocs + recharts
+    pos/page.tsx         — POS with runTransaction, onSnapshot error-reset on reconnect
+    inventory/page.tsx   — Inventory with onSnapshot + restock, error-reset on reconnect
+    analytics/page.tsx   — Analytics with getDocs + recharts, owner-only route guard
     menu/page.tsx        — Menu management (Phase 1 UI)
   login/
     page.tsx             — Real Firebase Auth login
   layout.tsx             — Root layout: AuthProvider wraps everything
 scripts/
   seed.ts                — Idempotent Firestore seed (setDoc with explicit IDs)
+firestore.rules          — Firestore Security Rules (role-based, get() for role lookup)
+firebase.json            — Firebase CLI config (points to firestore.rules)
+firestore.indexes.json   — Firestore indexes (empty, required by firebase.json)
 ```
