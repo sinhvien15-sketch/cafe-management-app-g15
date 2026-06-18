@@ -217,8 +217,7 @@ export default function InventoryPage() {
       setRestockTarget(null);
       showToast(`✓ Đã nhập thêm ${formatNum(qty)} ${restockTarget.unit} ${restockTarget.name}${extra}`);
 
-    } catch (err) {
-      console.error('Restock failed:', err);
+    } catch {
       setRestockTarget(null);
       showToast('✗ Nhập hàng thất bại, vui lòng thử lại', true);
     } finally {

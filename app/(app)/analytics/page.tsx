@@ -197,8 +197,7 @@ export default function AnalyticsPage() {
       const result = await loadAnalytics();
       setData(result);
       setLastUpdated(new Date());
-    } catch (err) {
-      console.error('Analytics fetch failed:', err);
+    } catch {
       setFetchError(true);
     } finally {
       setLoading(false);

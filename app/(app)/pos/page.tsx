@@ -205,8 +205,7 @@ export default function PosPage() {
       setPaymentMethod('cash');
       showToast(`✓ Tạo đơn thành công — ${orderCode}`);
 
-    } catch (err) {
-      console.error('Order failed:', err);
+    } catch {
       showToast('✗ Tạo đơn thất bại, vui lòng thử lại', true);
     } finally {
       setSubmitting(false);
