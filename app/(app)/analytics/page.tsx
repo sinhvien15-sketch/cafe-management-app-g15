@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/auth-context';
-import type { Order, Ingredient, LocalizedText } from '@/app/lib/types';
+import type { Order, Ingredient, MenuItem, LocalizedText } from '@/app/lib/types';
 import { getLocalized, useLanguage } from '@/app/lib/i18n';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -52,8 +52,13 @@ async function loadAnalytics(): Promise<AnalyticsData> {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
 
-  // Fetch today's orders and all ingredients in parallel
-  const [ordersSnap, ingSnap] = await Promise.all([
+  // Fetch today's orders, ingredients, and menu items in parallel.
+  // menu_items is fetched here (not from order snapshots) so that item names
+  // are always the current bilingual { vi, en } version, regardless of when
+  // the order was placed. Orders created before the bilingual migration stored
+  // name as a plain Vietnamese string — using the live menu_items record fixes
+  // the display without requiring a data migration on historical orders.
+  const [ordersSnap, ingSnap, menuSnap] = await Promise.all([
     getDocs(
       query(
         collection(db, 'orders'),
@@ -61,7 +66,14 @@ async function loadAnalytics(): Promise<AnalyticsData> {
       ),
     ),
     getDocs(collection(db, 'ingredients')),
+    getDocs(collection(db, 'menu_items')),
   ]);
+
+  // Build a menuItemId → name map from the live menu_items collection
+  const menuNameMap = new Map<string, LocalizedText | string>();
+  for (const d of menuSnap.docs) {
+    menuNameMap.set(d.id, (d.data() as MenuItem).name);
+  }
 
   const orders = ordersSnap.docs.map((d) => d.data() as Order);
 
@@ -88,7 +100,12 @@ async function loadAnalytics(): Promise<AnalyticsData> {
     for (const item of o.items) {
       const cur = itemMap.get(item.menuItemId);
       if (cur) cur.qty += item.quantity;
-      else itemMap.set(item.menuItemId, { name: item.name, qty: item.quantity });
+      else itemMap.set(item.menuItemId, {
+        // Prefer the live menu_items name (always bilingual); fall back to the
+        // order snapshot only if the item has since been deleted from the menu.
+        name: menuNameMap.get(item.menuItemId) ?? item.name,
+        qty:  item.quantity,
+      });
     }
   }
   const topItems = Array.from(itemMap.values())
