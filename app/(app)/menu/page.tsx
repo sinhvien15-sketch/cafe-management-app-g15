@@ -14,13 +14,13 @@ import {
 } from 'firebase/firestore';
 import {
   Plus, Pencil, Trash2, AlertCircle, CheckCircle,
-  Loader2, X, AlertTriangle,
+  Loader2, X, AlertTriangle, Languages,
 } from 'lucide-react';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/auth-context';
 import { CATEGORIES } from '@/app/lib/constants';
 import type { MenuItem, Ingredient, Category, WithId } from '@/app/lib/types';
-import { getLocalized } from '@/app/lib/i18n';
+import { getLocalized, useLanguage } from '@/app/lib/i18n';
 import { withTimeout } from '@/app/lib/utils';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -28,23 +28,16 @@ import { withTimeout } from '@/app/lib/utils';
 const formatVND = (n: number) => new Intl.NumberFormat('vi-VN').format(n) + 'đ';
 
 // Filter out 'all' — the form only needs the 4 real categories
-const MENU_CATS = CATEGORIES.filter((c) => c.value !== 'all') as {
-  value: Category;
-  label: string;
-}[];
-
-const CAT_LABEL: Record<string, string> = Object.fromEntries(
-  MENU_CATS.map((c) => [c.value, c.label]),
-);
+const MENU_CATS = CATEGORIES.filter((c) => c.value !== 'all') as { value: Category; label: string }[];
 
 // ── Form types ────────────────────────────────────────────────────────────────
 
 type FormLine = { ingredientId: string; quantityUsed: string };
-
 type ModalMode = { kind: 'add' } | { kind: 'edit'; item: WithId<MenuItem> };
 
 interface FormState {
   name:      string;
+  nameEn:    string;
   category:  Category;
   price:     string;
   available: boolean;
@@ -52,12 +45,13 @@ interface FormState {
 }
 
 function blank(): FormState {
-  return { name: '', category: 'coffee', price: '', available: true, recipe: [] };
+  return { name: '', nameEn: '', category: 'coffee', price: '', available: true, recipe: [] };
 }
 
 function fromItem(item: WithId<MenuItem>): FormState {
   return {
-    name:      getLocalized(item.name, 'vi'),
+    name:      getLocalized(item.name, 'vi'),   // always read each language separately
+    nameEn:    getLocalized(item.name, 'en'),   // prevents silent overwrite on edit
     category:  item.category,
     price:     String(item.price),
     available: item.available,
@@ -73,6 +67,7 @@ function fromItem(item: WithId<MenuItem>): FormState {
 export default function MenuPage() {
   const router   = useRouter();
   const { user } = useAuth();
+  const { lang, t } = useLanguage();
 
   // ── Remote state ──────────────────────────────────────────────────────────
   const [menuItems,   setMenuItems]   = useState<WithId<MenuItem>[]>([]);
@@ -87,9 +82,10 @@ export default function MenuPage() {
   const [deleting,     setDeleting]     = useState(false);
 
   // ── Form state ────────────────────────────────────────────────────────────
-  const [form,    setForm]    = useState<FormState>(blank());
-  const [errors,  setErrors]  = useState<Record<string, string>>({});
-  const [warning, setWarning] = useState<string | null>(null);
+  const [form,            setForm]            = useState<FormState>(blank());
+  const [errors,          setErrors]          = useState<Record<string, string>>({});
+  const [warning,         setWarning]         = useState<string | null>(null);
+  const [translatingName, setTranslatingName] = useState(false);
 
   // ── Toast state ───────────────────────────────────────────────────────────
   const [toast, setToast] = useState({ visible: false, message: '', error: false });
@@ -123,6 +119,25 @@ export default function MenuPage() {
   const showToast = (message: string, error = false) => {
     setToast({ visible: true, message, error });
     setTimeout(() => setToast({ visible: false, message: '', error: false }), error ? 4000 : 3000);
+  };
+
+  // ── Auto-translate VI name → EN name ──────────────────────────────────────
+  const translateName = async (viText: string) => {
+    if (!viText.trim()) return;
+    setTranslatingName(true);
+    try {
+      const res  = await fetch(`/api/translate?q=${encodeURIComponent(viText)}`);
+      const json = await res.json();
+      if (json.translation) {
+        setForm((f) => ({ ...f, nameEn: json.translation }));
+      } else {
+        throw new Error('no translation');
+      }
+    } catch {
+      showToast(t('lbl_translate_err'), true);
+    } finally {
+      setTranslatingName(false);
+    }
   };
 
   // ── Modal open/close ──────────────────────────────────────────────────────
@@ -162,16 +177,17 @@ export default function MenuPage() {
   const removeLine = (i: number) =>
     setForm((f) => ({ ...f, recipe: f.recipe.filter((_, idx) => idx !== i) }));
 
-  // ── Validation ────────────────────────────────────────────────────────────
+  // ── Validation — returns dict keys, rendered with t() ─────────────────────
   const validate = (): boolean => {
     const e: Record<string, string> = {};
-    if (!form.name.trim()) e.name = 'Vui lòng nhập tên món';
+    if (!form.name.trim())   e.name   = 'menu_err_name';
+    if (!form.nameEn.trim()) e.nameEn = 'menu_err_name_en';
     const p = parseFloat(form.price);
-    if (!form.price || isNaN(p) || p <= 0) e.price = 'Giá phải lớn hơn 0';
+    if (!form.price || isNaN(p) || p <= 0) e.price = 'menu_err_price';
     form.recipe.forEach((line, i) => {
-      if (!line.ingredientId) e[`r_${i}_ingredientId`] = 'Chọn nguyên liệu';
+      if (!line.ingredientId) e[`r_${i}_ingredientId`] = 'menu_err_select_ingredient';
       const qty = parseFloat(line.quantityUsed);
-      if (!line.quantityUsed || isNaN(qty) || qty <= 0) e[`r_${i}_quantityUsed`] = 'Số lượng > 0';
+      if (!line.quantityUsed || isNaN(qty) || qty <= 0) e[`r_${i}_quantityUsed`] = 'menu_err_ingredient_qty';
     });
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -199,11 +215,11 @@ export default function MenuPage() {
           const ing = ingredients.find((i) => i.id === r.ingredientId);
           return !ing || ing.currentStock <= 0;
         })
-        .map((r) => getLocalized(ingredients.find((i) => i.id === r.ingredientId)?.name, 'vi') || r.ingredientId);
+        .map((r) => getLocalized(ingredients.find((i) => i.id === r.ingredientId)?.name, lang) || r.ingredientId);
 
       if (missingNames.length > 0) {
         available = false;
-        availWarn = `Đã tự động đặt về "Ngừng bán" vì các nguyên liệu sau đang hết hàng: ${missingNames.join(', ')}.`;
+        availWarn = `${t('menu_warning_auto_unavailable')} ${missingNames.join(', ')}.`;
       }
     }
 
@@ -211,8 +227,8 @@ export default function MenuPage() {
       if (modal?.kind === 'add') {
         await withTimeout(
           addDoc(collection(db, 'menu_items'), {
-            name: { vi: form.name.trim(), en: form.name.trim() },
-            category: form.category,
+            name:      { vi: form.name.trim(), en: form.nameEn.trim() },
+            category:  form.category,
             price,
             available,
             recipe,
@@ -223,8 +239,8 @@ export default function MenuPage() {
       } else if (modal?.kind === 'edit') {
         await withTimeout(
           updateDoc(doc(db, 'menu_items', modal.item.id), {
-            name: { vi: form.name.trim(), en: form.name.trim() },
-            category: form.category,
+            name:      { vi: form.name.trim(), en: form.nameEn.trim() },
+            category:  form.category,
             price,
             available,
             recipe,
@@ -238,13 +254,13 @@ export default function MenuPage() {
         setWarning(availWarn);
         setForm((f) => ({ ...f, available: false }));
       } else {
-        const verb = modal?.kind === 'add' ? 'Đã thêm' : 'Đã cập nhật';
+        const toastMsg = modal?.kind === 'add' ? t('menu_toast_added') : t('menu_toast_updated');
         closeModal();
-        showToast(`✓ ${verb} "${form.name.trim()}"`);
+        showToast(`${toastMsg} "${form.name.trim()}"`);
       }
     } catch (err) {
       const isTimeout = err instanceof Error && err.message === 'timeout';
-      showToast(isTimeout ? '✗ Lưu thất bại — kiểm tra kết nối mạng và thử lại' : '✗ Lưu thất bại, vui lòng thử lại', true);
+      showToast(isTimeout ? t('err_save_timeout') : t('menu_toast_save_error'), true);
     } finally {
       setSubmitting(false);
     }
@@ -254,15 +270,15 @@ export default function MenuPage() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setDeleting(true);
-    const name = getLocalized(deleteTarget.name, 'vi');
+    const name = getLocalized(deleteTarget.name, lang);
     try {
       await withTimeout(deleteDoc(doc(db, 'menu_items', deleteTarget.id)), 9000);
       setDeleteTarget(null);
-      showToast(`✓ Đã xóa "${name}"`);
+      showToast(`${t('menu_toast_deleted')} "${name}"`);
     } catch (err) {
       const isTimeout = err instanceof Error && err.message === 'timeout';
       setDeleteTarget(null);
-      showToast(isTimeout ? '✗ Xóa thất bại — kiểm tra kết nối mạng và thử lại' : '✗ Xóa thất bại, vui lòng thử lại', true);
+      showToast(isTimeout ? t('err_save_timeout') : t('menu_toast_delete_error'), true);
     } finally {
       setDeleting(false);
     }
@@ -274,9 +290,9 @@ export default function MenuPage() {
       {/* ── Page header ───────────────────────────────────────────────────── */}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-h1 font-semibold text-ink">Quản lý menu</h1>
+          <h1 className="text-h1 font-semibold text-ink">{t('menu_title')}</h1>
           <p className="mt-1 text-sm text-muted">
-            {loading ? 'Đang tải…' : `${menuItems.length} món`}
+            {loading ? t('loading') : `${menuItems.length} ${t('menu_count_unit')}`}
           </p>
         </div>
         <button
@@ -284,7 +300,7 @@ export default function MenuPage() {
           className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-hover"
         >
           <Plus className="h-4 w-4" />
-          Thêm món mới
+          {t('menu_btn_add')}
         </button>
       </div>
 
@@ -292,7 +308,7 @@ export default function MenuPage() {
       {!loading && loadError && (
         <div className="mb-5 flex items-center gap-2.5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-danger">
           <AlertCircle className="h-4 w-4 flex-none" />
-          Không thể tải dữ liệu — kiểm tra kết nối.
+          {t('menu_err_load')}
         </div>
       )}
 
@@ -301,7 +317,10 @@ export default function MenuPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b-2 border-stone-200 bg-stone-50">
-              {['Tên món', 'Danh mục', 'Giá', 'Trạng thái', 'Công thức', 'Thao tác'].map((h) => (
+              {[
+                t('menu_col_name'), t('menu_col_category'), t('menu_col_price'),
+                t('menu_col_status'), t('menu_col_recipe'), t('menu_col_action'),
+              ].map((h) => (
                 <th
                   key={h}
                   className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted"
@@ -329,7 +348,7 @@ export default function MenuPage() {
                 <td colSpan={6} className="px-4 py-12 text-center">
                   <div className="flex flex-col items-center gap-2 text-danger">
                     <AlertCircle className="h-6 w-6" />
-                    <p className="text-sm font-medium">Không thể tải dữ liệu.</p>
+                    <p className="text-sm font-medium">{t('menu_err_load')}</p>
                   </div>
                 </td>
               </tr>
@@ -339,7 +358,7 @@ export default function MenuPage() {
             {!loading && !loadError && menuItems.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-sm text-muted">
-                  Chưa có món nào — nhấn &quot;Thêm món mới&quot; để bắt đầu.
+                  {t('menu_empty')}
                 </td>
               </tr>
             )}
@@ -350,8 +369,12 @@ export default function MenuPage() {
                 key={item.id}
                 className="border-b border-stone-100 last:border-0 transition-colors hover:bg-stone-50"
               >
-                <td className="px-4 py-3.5 font-medium text-ink">{getLocalized(item.name, 'vi')}</td>
-                <td className="px-4 py-3.5 text-muted">{CAT_LABEL[item.category] ?? item.category}</td>
+                {/* Name — resolved via getLocalized for the current language */}
+                <td className="px-4 py-3.5 font-medium text-ink">{getLocalized(item.name, lang)}</td>
+
+                {/* Category — uses t() with the cat_ prefix keys */}
+                <td className="px-4 py-3.5 text-muted">{t(`cat_${item.category}`)}</td>
+
                 <td className="px-4 py-3.5 font-semibold text-ink">{formatVND(item.price)}</td>
                 <td className="px-4 py-3.5">
                   <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${
@@ -359,13 +382,13 @@ export default function MenuPage() {
                       ? 'bg-emerald-100 text-emerald-700'
                       : 'bg-red-100 text-red-600'
                   }`}>
-                    {item.available ? 'Đang bán' : 'Ngừng bán'}
+                    {item.available ? t('menu_status_available') : t('menu_status_unavailable')}
                   </span>
                 </td>
                 <td className="px-4 py-3.5 text-muted">
                   {item.recipe.length === 0
-                    ? <span className="text-xs text-stone-400">Không có</span>
-                    : `${item.recipe.length} nguyên liệu`}
+                    ? <span className="text-xs text-stone-400">{t('menu_recipe_none')}</span>
+                    : `${item.recipe.length} ${t('menu_recipe_unit')}`}
                 </td>
                 <td className="px-4 py-3.5">
                   <div className="flex items-center gap-2">
@@ -374,14 +397,14 @@ export default function MenuPage() {
                       className="flex items-center gap-1 rounded-lg border border-stone-200 px-2.5 py-1.5 text-xs font-medium text-muted transition-colors hover:border-primary hover:text-primary"
                     >
                       <Pencil className="h-3.5 w-3.5" />
-                      Sửa
+                      {t('btn_edit')}
                     </button>
                     <button
                       onClick={() => setDeleteTarget(item)}
                       className="flex items-center gap-1 rounded-lg border border-stone-200 px-2.5 py-1.5 text-xs font-medium text-muted transition-colors hover:border-danger hover:text-danger"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                      Xóa
+                      {t('btn_delete')}
                     </button>
                   </div>
                 </td>
@@ -400,13 +423,13 @@ export default function MenuPage() {
               {/* Header */}
               <div className="mb-5 flex items-center justify-between">
                 <h2 className="text-h3 font-semibold text-ink">
-                  {modal.kind === 'add' ? 'Thêm món mới' : 'Chỉnh sửa món'}
+                  {modal.kind === 'add' ? t('menu_modal_add_title') : t('menu_modal_edit_title')}
                 </h2>
                 <button
                   onClick={closeModal}
                   disabled={submitting}
                   className="rounded-lg p-1.5 text-muted transition-colors hover:bg-stone-100 hover:text-ink disabled:opacity-50"
-                  aria-label="Đóng"
+                  aria-label={t('btn_close')}
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -420,50 +443,91 @@ export default function MenuPage() {
                 </div>
               )}
 
-              {/* ── Form fields ──────────────────────────────────────────── */}
               <div className="space-y-4">
 
-                {/* Dish name */}
+                {/* Vietnamese dish name — auto-translates EN field on blur if EN is empty */}
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-ink">
-                    Tên món <span className="text-danger">*</span>
+                    {t('menu_form_name_label')} <span className="text-danger">*</span>
                   </label>
                   <input
                     type="text"
                     value={form.name}
+                    placeholder={t('menu_form_name_placeholder')}
+                    autoFocus
                     onChange={(e) => {
                       setForm((f) => ({ ...f, name: e.target.value }));
                       setErrors((e_) => ({ ...e_, name: '' }));
                     }}
-                    placeholder="Ví dụ: Cà phê đen"
-                    autoFocus
+                    onBlur={(e) => {
+                      if (!form.nameEn.trim() && e.target.value.trim()) {
+                        translateName(e.target.value.trim());
+                      }
+                    }}
                     className={`w-full rounded-lg border px-3 py-2 text-sm text-ink placeholder:text-stone-400 focus:outline-none focus:ring-1 ${
                       errors.name
                         ? 'border-danger focus:border-danger focus:ring-danger'
                         : 'border-stone-200 focus:border-primary focus:ring-primary'
                     }`}
                   />
-                  {errors.name && <p className="mt-1 text-xs text-danger">{errors.name}</p>}
+                  {errors.name && <p className="mt-1 text-xs text-danger">{t(errors.name)}</p>}
+                </div>
+
+                {/* English dish name — always shown; translate button forces re-translate */}
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <label className="text-sm font-medium text-ink">
+                      {t('menu_form_name_en_label')} <span className="text-danger">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => translateName(form.name.trim())}
+                      disabled={translatingName || !form.name.trim()}
+                      className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-40"
+                      title={t('lbl_translate_btn')}
+                    >
+                      {translatingName
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Languages className="h-3.5 w-3.5" />}
+                      {t('lbl_translate_btn')}
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={form.nameEn}
+                    placeholder={translatingName ? '…' : t('menu_form_name_en_placeholder')}
+                    disabled={translatingName}
+                    onChange={(e) => {
+                      setForm((f) => ({ ...f, nameEn: e.target.value }));
+                      setErrors((e_) => ({ ...e_, nameEn: '' }));
+                    }}
+                    className={`w-full rounded-lg border px-3 py-2 text-sm text-ink placeholder:text-stone-400 focus:outline-none focus:ring-1 disabled:bg-stone-50 disabled:text-muted ${
+                      errors.nameEn
+                        ? 'border-danger focus:border-danger focus:ring-danger'
+                        : 'border-stone-200 focus:border-primary focus:ring-primary'
+                    }`}
+                  />
+                  {errors.nameEn && <p className="mt-1 text-xs text-danger">{t(errors.nameEn)}</p>}
                 </div>
 
                 {/* Category + Price side by side */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-ink">Danh mục</label>
+                    <label className="mb-1.5 block text-sm font-medium text-ink">{t('menu_form_category_label')}</label>
                     <select
                       value={form.category}
                       onChange={(e) => setForm((f) => ({ ...f, category: e.target.value as Category }))}
                       className="w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm text-ink focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     >
                       {MENU_CATS.map((c) => (
-                        <option key={c.value} value={c.value}>{c.label}</option>
+                        <option key={c.value} value={c.value}>{t(`cat_${c.value}`)}</option>
                       ))}
                     </select>
                   </div>
 
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-ink">
-                      Giá (VND) <span className="text-danger">*</span>
+                      {t('menu_form_price_label')} <span className="text-danger">*</span>
                     </label>
                     <input
                       type="number"
@@ -474,20 +538,20 @@ export default function MenuPage() {
                         setForm((f) => ({ ...f, price: e.target.value }));
                         setErrors((e_) => ({ ...e_, price: '' }));
                       }}
-                      placeholder="Ví dụ: 35000"
+                      placeholder={t('menu_form_price_placeholder')}
                       className={`w-full rounded-lg border px-3 py-2 text-sm text-ink placeholder:text-stone-400 focus:outline-none focus:ring-1 ${
                         errors.price
                           ? 'border-danger focus:border-danger focus:ring-danger'
                           : 'border-stone-200 focus:border-primary focus:ring-primary'
                       }`}
                     />
-                    {errors.price && <p className="mt-1 text-xs text-danger">{errors.price}</p>}
+                    {errors.price && <p className="mt-1 text-xs text-danger">{t(errors.price)}</p>}
                   </div>
                 </div>
 
                 {/* Available toggle */}
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-ink">Trạng thái bán</label>
+                  <label className="mb-2 block text-sm font-medium text-ink">{t('menu_form_status_label')}</label>
                   <button
                     type="button"
                     role="switch"
@@ -495,19 +559,15 @@ export default function MenuPage() {
                     onClick={() => setForm((f) => ({ ...f, available: !f.available }))}
                     className="flex items-center gap-3"
                   >
-                    <span
-                      className={`relative flex h-6 w-11 flex-none items-center rounded-full transition-colors ${
-                        form.available ? 'bg-emerald-500' : 'bg-stone-300'
-                      }`}
-                    >
-                      <span
-                        className={`mx-0.5 h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-                          form.available ? 'translate-x-5' : 'translate-x-0'
-                        }`}
-                      />
+                    <span className={`relative flex h-6 w-11 flex-none items-center rounded-full transition-colors ${
+                      form.available ? 'bg-emerald-500' : 'bg-stone-300'
+                    }`}>
+                      <span className={`mx-0.5 h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                        form.available ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
                     </span>
                     <span className={`text-sm font-medium ${form.available ? 'text-emerald-700' : 'text-muted'}`}>
-                      {form.available ? 'Đang bán' : 'Ngừng bán'}
+                      {form.available ? t('menu_status_available') : t('menu_status_unavailable')}
                     </span>
                   </button>
                 </div>
@@ -515,28 +575,26 @@ export default function MenuPage() {
                 {/* ── Recipe section ────────────────────────────────────── */}
                 <div>
                   <div className="mb-2 flex items-center justify-between">
-                    <label className="text-sm font-medium text-ink">
-                      Công thức (nguyên liệu)
-                    </label>
+                    <label className="text-sm font-medium text-ink">{t('menu_form_recipe_label')}</label>
                     <button
                       type="button"
                       onClick={addLine}
                       className="flex items-center gap-1 text-xs font-medium text-primary transition-colors hover:text-primary-hover"
                     >
                       <Plus className="h-3.5 w-3.5" />
-                      Thêm nguyên liệu
+                      {t('menu_form_add_ingredient')}
                     </button>
                   </div>
 
                   {/* Loading ingredients */}
                   {ingredients.length === 0 && (
-                    <p className="text-xs text-muted">Đang tải danh sách nguyên liệu…</p>
+                    <p className="text-xs text-muted">{t('menu_form_loading_ingredients')}</p>
                   )}
 
                   {/* Empty recipe placeholder */}
                   {form.recipe.length === 0 && ingredients.length > 0 && (
                     <p className="rounded-lg border border-dashed border-stone-300 px-4 py-3 text-center text-xs text-stone-400">
-                      Chưa có — nhấn &quot;Thêm nguyên liệu&quot; để thêm công thức
+                      {t('menu_form_recipe_empty')}
                     </p>
                   )}
 
@@ -546,7 +604,7 @@ export default function MenuPage() {
                       const selectedIng = ingredients.find((ing) => ing.id === line.ingredientId);
                       return (
                         <div key={i} className="flex items-start gap-2">
-                          {/* Ingredient dropdown */}
+                          {/* Ingredient dropdown — name resolved in current language */}
                           <div className="min-w-0 flex-1">
                             <select
                               value={line.ingredientId}
@@ -557,15 +615,15 @@ export default function MenuPage() {
                                   : 'border-stone-200 focus:border-primary focus:ring-primary'
                               }`}
                             >
-                              <option value="">— Chọn nguyên liệu —</option>
+                              <option value="">{t('menu_form_select_ingredient')}</option>
                               {ingredients.map((ing) => (
                                 <option key={ing.id} value={ing.id}>
-                                  {getLocalized(ing.name, 'vi')} ({ing.unit})
+                                  {getLocalized(ing.name, lang)} ({ing.unit})
                                 </option>
                               ))}
                             </select>
                             {errors[`r_${i}_ingredientId`] && (
-                              <p className="mt-0.5 text-xs text-danger">{errors[`r_${i}_ingredientId`]}</p>
+                              <p className="mt-0.5 text-xs text-danger">{t(errors[`r_${i}_ingredientId`])}</p>
                             )}
                           </div>
 
@@ -577,7 +635,7 @@ export default function MenuPage() {
                               step="any"
                               value={line.quantityUsed}
                               onChange={(e) => updateLine(i, 'quantityUsed', e.target.value)}
-                              placeholder="Số lượng"
+                              placeholder={t('menu_form_qty_placeholder')}
                               className={`w-full rounded-lg border px-3 py-2 text-sm text-ink placeholder:text-stone-400 focus:outline-none focus:ring-1 ${
                                 errors[`r_${i}_quantityUsed`]
                                   ? 'border-danger focus:border-danger focus:ring-danger'
@@ -585,7 +643,7 @@ export default function MenuPage() {
                               }`}
                             />
                             {errors[`r_${i}_quantityUsed`] && (
-                              <p className="mt-0.5 text-xs text-danger">{errors[`r_${i}_quantityUsed`]}</p>
+                              <p className="mt-0.5 text-xs text-danger">{t(errors[`r_${i}_quantityUsed`])}</p>
                             )}
                           </div>
 
@@ -599,7 +657,7 @@ export default function MenuPage() {
                             type="button"
                             onClick={() => removeLine(i)}
                             className="mt-1.5 flex-none rounded p-1 text-stone-400 transition-colors hover:bg-red-50 hover:text-danger"
-                            aria-label="Xóa dòng này"
+                            aria-label={t('menu_form_remove_line_aria')}
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -617,7 +675,7 @@ export default function MenuPage() {
                   disabled={submitting}
                   className="flex-1 rounded-lg border border-stone-200 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-stone-50 disabled:opacity-50"
                 >
-                  {warning ? 'Đóng' : 'Hủy'}
+                  {warning ? t('btn_close') : t('btn_cancel')}
                 </button>
                 {!warning && (
                   <button
@@ -631,7 +689,7 @@ export default function MenuPage() {
                     ].join(' ')}
                   >
                     {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                    {submitting ? 'Đang lưu…' : 'Lưu'}
+                    {submitting ? t('menu_btn_saving') : t('menu_btn_save')}
                   </button>
                 )}
               </div>
@@ -647,11 +705,13 @@ export default function MenuPage() {
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
               <Trash2 className="h-6 w-6 text-danger" />
             </div>
-            <h2 className="mb-2 text-h3 font-semibold text-ink">Xác nhận xóa</h2>
+            <h2 className="mb-2 text-h3 font-semibold text-ink">{t('menu_delete_title')}</h2>
             <p className="mb-5 text-sm text-muted">
-              Bạn có chắc muốn xóa món{' '}
-              <span className="font-semibold text-ink">&ldquo;{getLocalized(deleteTarget.name, 'vi')}&rdquo;</span>?
-              Thao tác này không thể hoàn tác.
+              {t('menu_delete_body')}{' '}
+              <span className="font-semibold text-ink">
+                &ldquo;{getLocalized(deleteTarget.name, lang)}&rdquo;
+              </span>?{' '}
+              {t('menu_delete_warning')}
             </p>
             <div className="flex gap-3">
               <button
@@ -659,7 +719,7 @@ export default function MenuPage() {
                 disabled={deleting}
                 className="flex-1 rounded-lg border border-stone-200 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-stone-50 disabled:opacity-50"
               >
-                Hủy
+                {t('btn_cancel')}
               </button>
               <button
                 onClick={handleDelete}
@@ -672,7 +732,7 @@ export default function MenuPage() {
                 ].join(' ')}
               >
                 {deleting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {deleting ? 'Đang xóa…' : 'Xóa'}
+                {deleting ? t('btn_deleting') : t('btn_delete')}
               </button>
             </div>
           </div>
