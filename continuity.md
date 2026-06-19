@@ -13,7 +13,15 @@ Academic project for the F&B Digital Transformation course — Hanoi School of B
 
 **PROJECT COMPLETE — Live URL: https://cafe-management-app-g15.vercel.app**
 
-**Post-Phase 3 addition — COMPLETE** (`/menu` full CRUD, owner-only, tested 2026-06-19)
+**Post-Phase 3 additions — ALL COMPLETE (as of 2026-06-19)**
+- `/menu` full CRUD with recipe management, owner-only
+- Supplier information feature in `/inventory`
+- Full VI/EN bilingual support across all 5 pages
+
+**PROJECT IS PAUSED — no unfinished work, safe to resume later.**
+
+> **Note:** The restaurant domain has NOT changed. This remains a **coffee shop** management
+> system throughout. No migration to noodle/pho or any other F&B domain has occurred.
 
 ---
 
@@ -43,24 +51,40 @@ Academic project for the F&B Digital Transformation course — Hanoi School of B
 - 3.4: Testing checklist — Firefox full flow passed; logout → direct URL redirect confirmed on all 3 routes; staff blocked from `/analytics` via nav AND direct URL (route-level `useEffect` redirect added); all 14 Firestore Rules Playground tests passed
 - 3.5: Deployed to Vercel — full smoke-test on live URL passed (login, order creation, stock deduction, role access, security)
 
-## Post-Phase 3 Addition — Completed
-> This feature was built after the original 3-phase plan was fully complete and deployed.
-> It is not part of MASTER_PLAN.md but was added as an enhancement session on 2026-06-19.
+## Post-Phase 3 Additions — Completed
+> These features were built after the original 3-phase plan was fully complete and deployed.
+> They are not part of MASTER_PLAN.md but were added as enhancement sessions.
 
-- `/menu` full CRUD page — owner-only (staff redirected to `/pos` via `useEffect` guard + nav hidden in AppShell)
-- Table layout: dish name, category, price, availability badge, recipe ingredient count, Edit + Delete buttons
-- Add/Edit modal: name, category dropdown (from `CATEGORIES` constant), price, available toggle, recipe section
+### Menu Management page (`/menu`)
+- Full CRUD — add, edit, delete menu items; owner-only (staff redirected to `/pos`)
+- Table: dish name, category, price, availability badge, recipe ingredient count, Edit + Delete buttons
+- Add/Edit modal: VI name, EN name (with auto-translate), category dropdown, price, available toggle, recipe section
   - Recipe section: `getDocs` loads ingredients for dropdowns; multi-line `{ ingredientId, quantityUsed }` with per-line delete
-  - Availability check on save: if `available=true` but any recipe ingredient has `currentStock ≤ 0`, auto-sets `available=false` and shows amber warning banner inside modal (modal stays open; owner must close manually after reading)
-- Delete flow: confirmation dialog before `deleteDoc`; existing `orders` unaffected (they store name snapshots, not references)
-- `AppShell.tsx` updated: `/menu` nav item changed to `ownerOnly: true`
-- `npm run build` passed with zero TypeScript errors
+  - Availability check on save: if `available=true` but any recipe ingredient has `currentStock ≤ 0`, auto-sets `available=false` and shows amber warning in modal
+- Delete flow: confirmation dialog before `deleteDoc`; existing orders unaffected (they store name snapshots, not references)
 - All 6 test scenarios passed: add with/without recipe, availability warning on low stock, edit recipe, delete without affecting orders, staff blocked via nav and direct URL
+
+### Supplier feature (`/inventory`)
+- Edit modal extended with optional supplier section: name, phone, Zalo, address
+- Supplier detail modal: click a supplier name in the table to view full contact info
+- Supplier names and addresses are intentionally NOT translated (they are proper nouns / identifiers, not UI labels)
+
+### Full bilingual support — Vietnamese / English (VI/EN)
+- All 5 pages fully translated: `/login`, `/pos`, `/inventory`, `/analytics`, `/menu`
+- Language toggle in AppShell header; preference persisted in `localStorage`
+- **`LocalizedText = { vi: string; en: string }`** — bilingual field type stored in Firestore for `MenuItem.name`, `Ingredient.name`, `OrderItem.name`
+- **`getLocalized(text, lang)`** — read helper; handles legacy plain-string docs gracefully
+- **`useLanguage()` → `{ lang, setLang, t }`** — hook providing `t(key)` dictionary lookup
+- **`app/lib/i18n.tsx`** — full bilingual dictionary (~200 keys), covers all pages
+- **Auto-translate** via MyMemory Translation API, called through a secure Next.js API route (`/api/translate`) — no API key required; falls back gracefully (toast shown, field left empty, save not blocked)
+- `withTimeout(fetch(...), 6000)` on the API route, `AbortSignal.timeout(6000)` for the upstream call
+- Supplier names/addresses are intentionally NOT auto-translated (proper names/identifiers)
 
 ---
 
 ## Known Issues / Blockers
 - None. All pages functional on both localhost and the live Vercel deployment.
+- Project is paused in a clean, complete state.
 
 ---
 
@@ -82,44 +106,116 @@ Academic project for the F&B Digital Transformation course — Hanoi School of B
 - **Stale state in restock** (Phase 2.5): after `updateDoc`, `onSnapshot` hasn't fired yet. The availability-restore check uses the locally computed `newStock` for the restocked ingredient, not `ingredients` state which is still stale at that point.
 
 ### Firestore Write Timeouts
-- **All user-facing Firestore writes must be wrapped with `withTimeout(promise, ms)`** — a `Promise.race` against a rejection timer defined in `app/lib/utils.ts`. The Firebase JS SDK retries writes indefinitely when the network is lost (silent backoff with no upper bound), which causes the "Saving…" button to freeze for minutes rather than seconds. Lesson learned from offline testing: without an explicit timeout, `runTransaction`, `updateDoc`, `addDoc`, and `deleteDoc` all hang silently.
+- **All user-facing Firestore writes must be wrapped with `withTimeout(promise, ms)`** — a `Promise.race` against a rejection timer defined in `app/lib/utils.ts`. The Firebase JS SDK retries writes indefinitely when the network is lost (silent backoff with no upper bound), causing the "Saving…" button to freeze for minutes with no feedback.
 - **Timeout values in use**: 9 s for primary critical writes (`runTransaction` in POS, `updateDoc` in inventory edit, `addDoc`/`updateDoc` in menu save/delete, `updateDoc` in restock); 5 s for secondary side-effect writes (`Promise.all` for marking menu items unavailable, audit-log `addDoc` in restock).
-- **Error distinction in catch blocks**: `err instanceof Error && err.message === 'timeout'` → show network-specific toast (`err_save_timeout` i18n key: "Save failed — check your network connection and try again"); other errors → show the existing generic retry toast. This distinction is important because a timeout implies a network problem, while a Firestore error may indicate a permissions or data issue.
+- **Error distinction in catch blocks**: `err instanceof Error && err.message === 'timeout'` → show network-specific toast (`err_save_timeout`); other errors → show generic retry toast. This matters because a timeout implies a connectivity problem, while a Firestore error may indicate a permissions or data issue — the user needs different guidance for each.
 - **Applied to**: `pos/handleConfirm`, `inventory/handleEdit`, `inventory/handleRestock`, `menu/handleSave`, `menu/handleDelete`.
+- **Lesson**: This is a Firebase-specific gotcha not documented prominently in Firebase docs. Any production app using the Firebase JS SDK in a browser needs this pattern for all write paths.
 
 ### Security (Phase 3)
 - **Firestore Security Rules** in `firestore.rules`: role checked via `get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role`. `orders` and `stock_transactions` are append-only (create allowed, update/delete denied). `ingredients`/`menu_items` allow update by any logged-in user (needed for stock ops) but create/delete only by owner. `users` documents are read-only from the client.
 - **Analytics route guard**: `/analytics/page.tsx` contains a `useEffect` that redirects non-owner users to `/pos`, complementing the nav-level hide in `AppShell.tsx`. Double-layer: UI hides the link + route rejects direct access.
-- **`console.error` removal**: raw Firebase error objects can expose Firestore document paths in DevTools; all three production error handlers use anonymous `catch {}` and show only a generic Vietnamese toast.
+- **`console.error` removal**: raw Firebase error objects can expose Firestore document paths in DevTools; all production error handlers use anonymous `catch {}` and show only a generic toast.
 - **recharts `Tooltip` formatter type fix**: production TypeScript build requires `ValueType` (which includes `readonly (string | number)[]`); removed explicit `number | string` annotations, used `typeof v === 'number'` guards instead.
 
 ### UI Patterns
 - **recharts SSR guard**: `const [mounted, setMounted] = useState(false)` + `useEffect(() => setMounted(true), [])`. Render `<ChartSkeleton>` on server, swap to real chart after mount. Without this, recharts throws hydration errors.
 - **KPI card icon positioning**: icon uses `absolute right-0 top-0` inside a `relative pr-11 min-h-[2.5rem]` container — prevents the icon from overlapping long label text on narrow (2-col) grid cards.
 - **VND formatting**: `new Intl.NumberFormat('vi-VN').format(n) + 'đ'` — produces `25.000đ` format.
-- **`submitting` state on POS confirm**: disables both the "Xác nhận thanh toán" button AND the modal "Hoàn thành" button during the transaction to prevent double-submission.
+- **`submitting` state on POS confirm**: disables both the confirm button AND the modal close button during the transaction to prevent double-submission.
 - **`onSnapshot` reconnect fix**: both `/pos` and `/inventory` success callbacks call `setMenuError(false)` / `setLoadError(false)` to clear the error banner when the network recovers after a drop.
 
-### File Map (key files)
+---
+
+## Important Technical Lessons Learned
+*(For use in academic reports and future projects)*
+
+### 1. TypeScript type assertions (`as Type`) do not verify runtime data
+When reading Firestore documents with `doc.data() as MenuItem`, TypeScript trusts the assertion completely — it does not check whether the actual data matches the type. If a document was created before a schema migration (e.g., before `name` changed from `string` to `{ vi, en }`), the runtime value is still a plain string even though TypeScript sees `LocalizedText`.
+
+**Pattern applied:** `getLocalized(text, lang)` checks `typeof text === 'string'` at runtime and handles both old and new formats. `ensureLocalized(name)` is used at write boundaries to coerce legacy strings into `{ vi, en }` objects. Never assume Firestore data matches your TypeScript type — always handle the legacy format explicitly at the boundary where data enters the system.
+
+### 2. Stored data snapshots must be fully multilingual, not UI-language-dependent
+When an order is created, `OrderItem.name` is saved as a snapshot of the menu item name at that moment. If only the currently-displayed language is saved (e.g., `name: getLocalized(item.name, lang)`), all historical orders are locked into whatever language was active at creation time — switching the UI language later will show the wrong language or a missing name in order history and analytics.
+
+**Pattern applied:** Always write `{ vi: ..., en: ... }` to Firestore for any field that will be displayed to users. Resolve to a display string only at render time using `getLocalized(storedName, lang)`. The stored object carries both languages permanently; the UI picks the right one on demand.
+
+### 3. Bilingual data entry forms need two simultaneous fields, not one switching field
+An initial design approach was to show one name field that changes label/placeholder based on the current UI language (VI mode → "Tên món", EN mode → "Item name"). This is dangerous: if the owner edits a name in VI mode and saves, the write path only has the VI value — the EN value is silently overwritten with the same string (or lost entirely).
+
+**Pattern applied:** Always show both `name (Vietnamese)` and `name (English)` fields simultaneously in the same modal, regardless of the current UI language. `fromItem()` reads each language independently: `getLocalized(item.name, 'vi')` and `getLocalized(item.name, 'en')` into separate form fields. The save path writes `{ vi: form.name.trim(), en: form.nameEn.trim() }` explicitly. This makes the two-language nature visible and prevents any implicit overwrite.
+
+### 4. Firebase SDK does not time out writes when the network is lost
+The Firebase JS SDK's default behavior for Firestore writes (`addDoc`, `updateDoc`, `deleteDoc`, `runTransaction`) when offline is to queue the operation and retry silently with exponential backoff — indefinitely, with no upper bound and no user-facing feedback. The Promise returned by these calls never rejects; it simply never resolves. This causes any "Saving…" loading state to freeze forever from the user's perspective.
+
+**Pattern applied:** Wrap every user-facing write in `withTimeout(promise, ms)` — a `Promise.race` between the Firestore call and a timeout rejection:
+```typescript
+export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), ms),
+    ),
+  ]);
+}
+```
+Catch blocks check `err instanceof Error && err.message === 'timeout'` to distinguish network timeouts from permission/data errors and show appropriate messages. Applied to all 5 write paths in this project. This is a necessary pattern for any production Firebase web app.
+
+### 5. Analytics grouping must use stable IDs, not display strings
+When grouping orders by menu item to compute "best-selling items," grouping by `item.name` (a display string) fails silently if the same dish appears under two different name formats (e.g., after a bilingual migration where some orders have `name: "Cà phê"` as a string and others have `name: { vi: "Cà phê", en: "Coffee" }`). Two rows appear in the chart for what is actually the same item.
+
+**Pattern applied:** Group by `menuItemId` (the stable Firestore document ID), not by name. Resolve the display name separately at render time via `getLocalized(item.name, lang)`. IDs never change; display strings can be migrated, corrected, or translated without breaking aggregations.
+
+### 6. Functions outside the React component tree cannot call hooks
+`loadAnalytics()` is defined outside the React component to keep the component body clean. It cannot call `useLanguage()` or `t()` because React hooks can only be called from within a component or another hook.
+
+**Pattern applied:** Store raw primitive keys (e.g., `'cash'` and `'bank_transfer'`) in the data returned by `loadAnalytics()`, and resolve them to translated display strings inside the component using a `displayPaymentData` mapping. Similarly, `STATUS_CONFIG` in `/inventory` uses a `labelKey` string field (a dict key) instead of a pre-translated label; JSX calls `t(cfg.labelKey)` at render time.
+
+### 7. TypeScript loses literal types through `.filter()` without `as const`
+```typescript
+// BUG — TypeScript infers name as `string`, not `'cash' | 'bank_transfer'`
+const data = [
+  { name: 'cash',         value: 100 },
+  { name: 'bank_transfer', value: 200 },
+].filter((d) => d.value > 0);
+
+// FIX — `as const` preserves the literal type through the filter
+const data = [
+  { name: 'cash' as const,          value: 100 },
+  { name: 'bank_transfer' as const, value: 200 },
+].filter((d) => d.value > 0);
+```
+This caused a TypeScript build error in production when the filtered array was assigned to a typed variable expecting `'cash' | 'bank_transfer'`. The fix is `as const` on the string literal, not a type annotation on the variable.
+
+### 8. Sub-components inside the React tree can call hooks independently
+When a sub-component like `<EmptyState>` is defined outside the main component function but still rendered inside the provider tree (inside `<LanguageProvider>`), it can and should call `useLanguage()` itself — not receive `t` as a prop. This keeps the API clean and avoids prop-drilling. The hook works because the component is rendered inside the provider tree at runtime, even though it is defined outside the main function.
+
+---
+
+## File Map (key files)
 ```
 app/
   lib/
     firebase.ts          — Firebase singleton (db, auth exports)
-    types.ts             — All Firestore TypeScript interfaces
+    types.ts             — All Firestore TypeScript interfaces (LocalizedText, MenuItem, Ingredient, etc.)
     auth-context.tsx     — AuthProvider + useAuth hook
-    constants.ts         — CATEGORIES, CartItem, mock data (Phase 1 remnant, still used for CATEGORIES)
+    constants.ts         — CATEGORIES constant (Phase 1 remnant, still used for dropdowns)
+    i18n.tsx             — LanguageProvider, useLanguage hook, t() dictionary (~200 keys, VI+EN)
+    utils.ts             — withTimeout<T>() utility (Promise.race timeout wrapper)
   components/
-    AppShell.tsx         — Sidebar + header, role-based nav, real logout
+    AppShell.tsx         — Sidebar + header, role-based nav, language toggle, real logout
     AuthGuard.tsx        — Route protection wrapper
   (app)/
     layout.tsx           — AuthGuard > AppShell > {children}
-    pos/page.tsx         — POS with runTransaction, onSnapshot error-reset on reconnect
-    inventory/page.tsx   — Inventory with onSnapshot + restock, error-reset on reconnect
+    pos/page.tsx         — POS with runTransaction, onSnapshot, withTimeout
+    inventory/page.tsx   — Inventory with onSnapshot + restock + supplier, withTimeout
     analytics/page.tsx   — Analytics with getDocs + recharts, owner-only route guard
-    menu/page.tsx        — Menu management — full CRUD with Firestore, owner-only (post-Phase 3)
+    menu/page.tsx        — Menu CRUD with recipe, bilingual names, auto-translate, withTimeout
+  api/
+    translate/route.ts   — Next.js API route proxying MyMemory Translation API (no key required)
   login/
     page.tsx             — Real Firebase Auth login
-  layout.tsx             — Root layout: AuthProvider wraps everything
+  layout.tsx             — Root layout: AuthProvider + LanguageProvider wrap everything
 scripts/
   seed.ts                — Idempotent Firestore seed (setDoc with explicit IDs)
 firestore.rules          — Firestore Security Rules (role-based, get() for role lookup)
