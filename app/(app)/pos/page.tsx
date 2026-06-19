@@ -17,6 +17,7 @@ import { db, auth } from '@/app/lib/firebase';
 import type { MenuItem, Ingredient, WithId, LocalizedText } from '@/app/lib/types';
 import { CATEGORIES, type CartItem } from '@/app/lib/constants';
 import { getLocalized, ensureLocalized, useLanguage } from '@/app/lib/i18n';
+import { withTimeout } from '@/app/lib/utils';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -133,7 +134,7 @@ export default function PosPage() {
       // If another transaction commits to any of these docs between our read
       // and write, Firestore retries the entire function automatically.
 
-      await runTransaction(db, async (txn) => {
+      await withTimeout(runTransaction(db, async (txn) => {
         // ── All reads ──────────────────────────────────────────────────────
         const ingSnaps: Record<string, ReturnType<typeof Object.create>> = {};
         for (const ingredientId of deductionMap.keys()) {
@@ -174,7 +175,7 @@ export default function PosPage() {
 
           if (newStock <= 0) depletedIds.push(ingredientId);
         }
-      });
+      }), 9000);
 
       // ── Step 2: mark related menu items unavailable (post-transaction) ─────
       // Not inside the transaction — the menu item's availability is derived
@@ -184,10 +185,13 @@ export default function PosPage() {
         const affected = menuItems.filter((m) =>
           m.recipe.some((r) => depletedIds.includes(r.ingredientId)),
         );
-        await Promise.all(
-          affected.map((m) =>
-            updateDoc(doc(db, 'menu_items', m.id), { available: false }),
+        await withTimeout(
+          Promise.all(
+            affected.map((m) =>
+              updateDoc(doc(db, 'menu_items', m.id), { available: false }),
+            ),
           ),
+          5000,
         );
       }
 
@@ -212,8 +216,9 @@ export default function PosPage() {
       setPaymentMethod('cash');
       showToast(`${t('pos_toast_success')} — ${orderCode}`);
 
-    } catch {
-      showToast(t('pos_toast_error'), true);
+    } catch (err) {
+      const isTimeout = err instanceof Error && err.message === 'timeout';
+      showToast(isTimeout ? t('err_save_timeout') : t('pos_toast_error'), true);
     } finally {
       setSubmitting(false);
       setShowModal(false);

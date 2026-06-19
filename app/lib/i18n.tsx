@@ -31,6 +31,9 @@ const dict: Record<Lang, Record<string, string>> = {
     err_network:                  'Không thể tải dữ liệu — kiểm tra kết nối.',
     lbl_required:                 '(bắt buộc)',
     lbl_optional:                 '(không bắt buộc)',
+    lbl_translate_btn:            'Dịch tự động',
+    lbl_translate_err:            'Không thể dịch tự động, vui lòng nhập thủ công',
+    err_save_timeout:             '✗ Lưu thất bại — kiểm tra kết nối mạng và thử lại',
 
     // ── Categories (used in POS tabs and Menu form dropdown) ─────────────────
     cat_all:                      'Tất cả',
@@ -129,7 +132,10 @@ const dict: Record<Lang, Record<string, string>> = {
     inv_supplier_address:         'Địa chỉ',
     // Edit ingredient modal
     inv_edit_modal_title:         'Chỉnh sửa nguyên liệu',
-    inv_edit_name_label:          'Tên nguyên liệu',
+    inv_edit_name_label:          'Tên nguyên liệu (tiếng Việt)',
+    inv_edit_name_placeholder:    'Ví dụ: Hạt cà phê',
+    inv_edit_name_en_label:       'Tên nguyên liệu (tiếng Anh)',
+    inv_edit_name_en_placeholder: 'Ví dụ: Coffee beans',
     inv_edit_unit_label:          'Đơn vị',
     inv_edit_unit_placeholder:    'g, ml, kg…',
     inv_edit_threshold_label:     'Ngưỡng cảnh báo',
@@ -146,7 +152,8 @@ const dict: Record<Lang, Record<string, string>> = {
     inv_edit_sup_address_placeholder: 'Số nhà, đường, quận, tỉnh/thành phố',
     inv_edit_btn_save:            'Lưu thay đổi',
     inv_edit_btn_saving:          'Đang lưu…',
-    inv_err_name:                 'Vui lòng nhập tên nguyên liệu',
+    inv_err_name:                 'Vui lòng nhập tên nguyên liệu (tiếng Việt)',
+    inv_err_name_en:              'Vui lòng nhập tên nguyên liệu (tiếng Anh)',
     inv_err_unit:                 'Vui lòng nhập đơn vị',
     inv_err_threshold:            'Ngưỡng phải ≥ 0',
     inv_err_sup_name:             'Vui lòng nhập tên nhà cung cấp',
@@ -251,6 +258,9 @@ const dict: Record<Lang, Record<string, string>> = {
     err_network:                  'Cannot load data — check your connection.',
     lbl_required:                 '(required)',
     lbl_optional:                 '(optional)',
+    lbl_translate_btn:            'Auto-translate',
+    lbl_translate_err:            'Cannot translate automatically, please enter manually',
+    err_save_timeout:             '✗ Save failed — check your network connection and try again',
 
     // ── Categories ───────────────────────────────────────────────────────────
     cat_all:                      'All',
@@ -350,6 +360,9 @@ const dict: Record<Lang, Record<string, string>> = {
     // Edit ingredient modal
     inv_edit_modal_title:         'Edit ingredient',
     inv_edit_name_label:          'Ingredient name (Vietnamese)',
+    inv_edit_name_placeholder:    'e.g. Hạt cà phê',
+    inv_edit_name_en_label:       'Ingredient name (English)',
+    inv_edit_name_en_placeholder: 'e.g. Coffee beans',
     inv_edit_unit_label:          'Unit',
     inv_edit_unit_placeholder:    'g, ml, kg…',
     inv_edit_threshold_label:     'Alert threshold',
@@ -366,7 +379,8 @@ const dict: Record<Lang, Record<string, string>> = {
     inv_edit_sup_address_placeholder: 'Street, district, city',
     inv_edit_btn_save:            'Save changes',
     inv_edit_btn_saving:          'Saving…',
-    inv_err_name:                 'Please enter the ingredient name',
+    inv_err_name:                 'Please enter the ingredient name (Vietnamese)',
+    inv_err_name_en:              'Please enter the ingredient name (English)',
     inv_err_unit:                 'Please enter the unit',
     inv_err_threshold:            'Threshold must be ≥ 0',
     inv_err_sup_name:             'Please enter the supplier name',

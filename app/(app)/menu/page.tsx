@@ -21,6 +21,7 @@ import { useAuth } from '@/app/lib/auth-context';
 import { CATEGORIES } from '@/app/lib/constants';
 import type { MenuItem, Ingredient, Category, WithId } from '@/app/lib/types';
 import { getLocalized } from '@/app/lib/i18n';
+import { withTimeout } from '@/app/lib/utils';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -208,22 +209,28 @@ export default function MenuPage() {
 
     try {
       if (modal?.kind === 'add') {
-        await addDoc(collection(db, 'menu_items'), {
-          name: { vi: form.name.trim(), en: form.name.trim() },
-          category: form.category,
-          price,
-          available,
-          recipe,
-          createdAt: Timestamp.now(),
-        });
+        await withTimeout(
+          addDoc(collection(db, 'menu_items'), {
+            name: { vi: form.name.trim(), en: form.name.trim() },
+            category: form.category,
+            price,
+            available,
+            recipe,
+            createdAt: Timestamp.now(),
+          }),
+          9000,
+        );
       } else if (modal?.kind === 'edit') {
-        await updateDoc(doc(db, 'menu_items', modal.item.id), {
-          name: { vi: form.name.trim(), en: form.name.trim() },
-          category: form.category,
-          price,
-          available,
-          recipe,
-        });
+        await withTimeout(
+          updateDoc(doc(db, 'menu_items', modal.item.id), {
+            name: { vi: form.name.trim(), en: form.name.trim() },
+            category: form.category,
+            price,
+            available,
+            recipe,
+          }),
+          9000,
+        );
       }
 
       if (availWarn) {
@@ -235,8 +242,9 @@ export default function MenuPage() {
         closeModal();
         showToast(`✓ ${verb} "${form.name.trim()}"`);
       }
-    } catch {
-      showToast('✗ Lưu thất bại, vui lòng thử lại', true);
+    } catch (err) {
+      const isTimeout = err instanceof Error && err.message === 'timeout';
+      showToast(isTimeout ? '✗ Lưu thất bại — kiểm tra kết nối mạng và thử lại' : '✗ Lưu thất bại, vui lòng thử lại', true);
     } finally {
       setSubmitting(false);
     }
@@ -248,12 +256,13 @@ export default function MenuPage() {
     setDeleting(true);
     const name = getLocalized(deleteTarget.name, 'vi');
     try {
-      await deleteDoc(doc(db, 'menu_items', deleteTarget.id));
+      await withTimeout(deleteDoc(doc(db, 'menu_items', deleteTarget.id)), 9000);
       setDeleteTarget(null);
       showToast(`✓ Đã xóa "${name}"`);
-    } catch {
+    } catch (err) {
+      const isTimeout = err instanceof Error && err.message === 'timeout';
       setDeleteTarget(null);
-      showToast('✗ Xóa thất bại, vui lòng thử lại', true);
+      showToast(isTimeout ? '✗ Xóa thất bại — kiểm tra kết nối mạng và thử lại' : '✗ Xóa thất bại, vui lòng thử lại', true);
     } finally {
       setDeleting(false);
     }
