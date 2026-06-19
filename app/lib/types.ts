@@ -58,7 +58,7 @@ export interface Ingredient {
 
 export interface OrderItem {
   menuItemId: string;
-  name: string;           // name snapshot at time of order (menu names can change later)
+  name: LocalizedText;    // bilingual snapshot at time of order — both vi+en stored together
   quantity: number;
   unitPrice: number;
   subtotal: number;       // unitPrice × quantity

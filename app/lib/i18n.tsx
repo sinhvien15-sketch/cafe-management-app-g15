@@ -519,3 +519,12 @@ export function getLocalized(
   if (typeof text === 'string') return text;   // legacy string doc — return as-is
   return text[lang] || text.vi || text.en || '';
 }
+
+// Coerce a runtime string OR LocalizedText → always returns a proper LocalizedText object.
+// Needed because Firestore docs created before the migration carry name as a plain string,
+// but TypeScript only sees the type-asserted LocalizedText.  Use this anywhere a
+// LocalizedText must be WRITTEN (e.g. into orders), not just read.
+export function ensureLocalized(name: LocalizedText | string): LocalizedText {
+  if (typeof name === 'string') return { vi: name, en: name };
+  return name;
+}

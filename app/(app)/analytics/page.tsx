@@ -14,18 +14,19 @@ import {
 } from 'lucide-react';
 import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/auth-context';
-import type { Order, Ingredient } from '@/app/lib/types';
+import type { Order, Ingredient, LocalizedText } from '@/app/lib/types';
+import { getLocalized, useLanguage } from '@/app/lib/i18n';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface AnalyticsData {
   totalRevenue:    number;
   orderCount:      number;
-  bestSelling:     string;
+  bestSelling:     LocalizedText | string;   // raw from order — resolve with getLocalized at render
   bestSellingQty:  number;
   lowStockCount:   number;
   hourlyRevenue:   { hour: number; revenue: number }[];
-  topItems:        { name: string; qty: number }[];
+  topItems:        { name: LocalizedText | string; qty: number }[];  // raw — resolve at render
   paymentData:     { name: string; value: number }[];
 }
 
@@ -80,7 +81,7 @@ async function loadAnalytics(): Promise<AnalyticsData> {
   }));
 
   // ── Top 5 items by total quantity sold ─────────────────────────────────────
-  const itemMap = new Map<string, { name: string; qty: number }>();
+  const itemMap = new Map<string, { name: LocalizedText | string; qty: number }>();
   for (const o of orders) {
     for (const item of o.items) {
       const cur = itemMap.get(item.menuItemId);
@@ -183,6 +184,7 @@ function EmptyState() {
 export default function AnalyticsPage() {
   const router  = useRouter();
   const { user } = useAuth();
+  const { lang } = useLanguage();
 
   const [mounted,     setMounted]     = useState(false);
   const [loading,     setLoading]     = useState(true);
@@ -218,6 +220,13 @@ export default function AnalyticsPage() {
   }, []);
 
   useEffect(() => { fetch(); }, [fetch]);
+
+  // Resolve LocalizedText names into display strings for the current language
+  const displayTopItems = (data?.topItems ?? []).map((item) => ({
+    name: getLocalized(item.name, lang),
+    qty:  item.qty,
+  }));
+  const displayBestSelling = data ? getLocalized(data.bestSelling, lang) : '—';
 
   const hasData = (data?.orderCount ?? 0) > 0;
 
@@ -270,7 +279,7 @@ export default function AnalyticsPage() {
         />
         <KpiCard
           label="Món bán chạy nhất"
-          value={data ? data.bestSelling : '—'}
+          value={displayBestSelling}
           sub={data && data.bestSellingQty > 0 ? `${data.bestSellingQty} đơn` : undefined}
           icon={<Award className="h-5 w-5" />}
           skeleton={loading}
@@ -336,7 +345,7 @@ export default function AnalyticsPage() {
               {mounted ? (
                 <ResponsiveContainer width="100%" height={240}>
                   <BarChart
-                    data={data!.topItems}
+                    data={displayTopItems}
                     layout="vertical"
                     margin={{ top: 0, right: 16, left: 0, bottom: 0 }}
                   >

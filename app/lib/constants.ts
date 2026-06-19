@@ -10,9 +10,11 @@ export type MenuItem = {
   available: boolean;
 };
 
+import type { LocalizedText } from './types';
+
 export type CartItem = {
   menuItemId: string;
-  name: string;
+  name: LocalizedText;   // bilingual — resolved to string at display time via getLocalized
   unitPrice: number;
   quantity: number;
 };

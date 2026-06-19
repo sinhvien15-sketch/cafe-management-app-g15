@@ -14,9 +14,9 @@ import {
   Trash2, Plus, Minus, CheckCircle, AlertCircle, ShoppingCart, Loader2,
 } from 'lucide-react';
 import { db, auth } from '@/app/lib/firebase';
-import type { MenuItem, Ingredient, WithId } from '@/app/lib/types';
+import type { MenuItem, Ingredient, WithId, LocalizedText } from '@/app/lib/types';
 import { CATEGORIES, type CartItem } from '@/app/lib/constants';
-import { getLocalized } from '@/app/lib/i18n';
+import { getLocalized, ensureLocalized, useLanguage } from '@/app/lib/i18n';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -25,6 +25,8 @@ const formatVND = (n: number) => new Intl.NumberFormat('vi-VN').format(n) + 'đ'
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PosPage() {
+  const { lang, t } = useLanguage();
+
   // ── Remote state ──────────────────────────────────────────────────────────
   const [menuItems,   setMenuItems]   = useState<WithId<MenuItem>[]>([]);
   const [loadingMenu, setLoadingMenu] = useState(true);
@@ -73,7 +75,10 @@ export default function PosPage() {
         return prev.map((c) =>
           c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c,
         );
-      return [...prev, { menuItemId: item.id, name: getLocalized(item.name, 'vi'), unitPrice: item.price, quantity: 1 }];
+      // ensureLocalized coerces legacy string names (pre-migration Firestore docs) to
+      // { vi, en } so every order always stores a proper LocalizedText object.
+      const nameLocalized = ensureLocalized(item.name as LocalizedText | string);
+      return [...prev, { menuItemId: item.id, name: nameLocalized, unitPrice: item.price, quantity: 1 }];
     });
     setLastAddedId(item.id);
     setTimeout(() => setLastAddedId(null), 600);
@@ -205,10 +210,10 @@ export default function PosPage() {
       orderCounterRef.current++;
       setCart([]);
       setPaymentMethod('cash');
-      showToast(`✓ Tạo đơn thành công — ${orderCode}`);
+      showToast(`${t('pos_toast_success')} — ${orderCode}`);
 
     } catch {
-      showToast('✗ Tạo đơn thất bại, vui lòng thử lại', true);
+      showToast(t('pos_toast_error'), true);
     } finally {
       setSubmitting(false);
       setShowModal(false);
@@ -224,7 +229,7 @@ export default function PosPage() {
 
         {/* Left: menu items ─────────────────────────────────────────────────── */}
         <div className="min-w-0 flex-1">
-          <h1 className="text-h2 mb-4 font-semibold text-ink">Chọn món</h1>
+          <h1 className="text-h2 mb-4 font-semibold text-ink">{t('pos_title')}</h1>
 
           {/* Category tabs */}
           <div className="mb-5 flex gap-1 overflow-x-auto border-b border-stone-200">
@@ -239,7 +244,7 @@ export default function PosPage() {
                     : 'border-transparent text-muted hover:text-ink',
                 ].join(' ')}
               >
-                {cat.label}
+                {t(`cat_${cat.value}`)}
               </button>
             ))}
           </div>
@@ -257,7 +262,7 @@ export default function PosPage() {
           {!loadingMenu && menuError && (
             <div className="flex flex-col items-center gap-2 py-16 text-danger">
               <AlertCircle className="h-8 w-8" />
-              <p className="text-sm font-medium">Không thể tải menu — kiểm tra kết nối.</p>
+              <p className="text-sm font-medium">{t('pos_err_load')}</p>
             </div>
           )}
 
@@ -280,11 +285,11 @@ export default function PosPage() {
                 >
                   {!item.available && (
                     <span className="absolute right-2 top-2 rounded-full bg-danger px-2 py-0.5 text-xs font-medium text-white">
-                      Hết hàng
+                      {t('pos_out_of_stock')}
                     </span>
                   )}
                   <p className="pr-12 text-sm font-semibold leading-snug text-ink">
-                    {getLocalized(item.name, 'vi')}
+                    {getLocalized(item.name, lang)}
                   </p>
                   <p className="mt-2 text-base font-bold text-secondary">
                     {formatVND(item.price)}
@@ -293,7 +298,7 @@ export default function PosPage() {
               ))}
               {filteredItems.length === 0 && (
                 <p className="col-span-4 py-12 text-center text-sm text-muted">
-                  Không có món nào trong danh mục này
+                  {t('pos_empty_category')}
                 </p>
               )}
             </div>
@@ -308,7 +313,7 @@ export default function PosPage() {
               {/* Cart header */}
               <div className="flex flex-none items-center gap-2 border-b border-stone-100 px-5 py-4">
                 <ShoppingCart className="h-5 w-5 text-primary" />
-                <h2 className="text-h3 font-semibold text-ink">Đơn hàng</h2>
+                <h2 className="text-h3 font-semibold text-ink">{t('pos_cart_title')}</h2>
                 {totalQty > 0 && (
                   <span className="ml-auto rounded-full bg-primary px-2 py-0.5 text-xs font-bold text-white">
                     {totalQty}
@@ -319,12 +324,12 @@ export default function PosPage() {
               {/* Cart items */}
               <div className="flex-1 space-y-3 overflow-y-auto px-5 py-3">
                 {cart.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-muted">Chưa có món nào</p>
+                  <p className="py-8 text-center text-sm text-muted">{t('pos_cart_empty')}</p>
                 ) : (
                   cart.map((item) => (
                     <div key={item.menuItemId} className="flex items-center gap-2">
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-ink">{item.name}</p>
+                        <p className="truncate text-sm font-medium text-ink">{getLocalized(item.name, lang)}</p>
                         <p className="text-xs text-muted">{formatVND(item.unitPrice)}</p>
                       </div>
                       <div className="flex items-center gap-1">
@@ -350,7 +355,7 @@ export default function PosPage() {
                       <button
                         onClick={() => removeItem(item.menuItemId)}
                         className="text-muted transition-colors hover:text-danger"
-                        aria-label={`Xóa ${item.name}`}
+                        aria-label={`${t('pos_aria_remove_item')} ${getLocalized(item.name, lang)}`}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -362,7 +367,7 @@ export default function PosPage() {
               {/* Cart footer */}
               <div className="flex-none space-y-4 border-t border-stone-100 px-5 py-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-ink">Tổng cộng</span>
+                  <span className="text-sm font-semibold text-ink">{t('lbl_total')}</span>
                   <span className="text-h3 font-bold text-primary">{formatVND(total)}</span>
                 </div>
                 <select
@@ -370,8 +375,8 @@ export default function PosPage() {
                   onChange={(e) => setPaymentMethod(e.target.value as 'cash' | 'bank_transfer')}
                   className="w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm text-ink focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 >
-                  <option value="cash">Tiền mặt</option>
-                  <option value="bank_transfer">Chuyển khoản</option>
+                  <option value="cash">{t('pos_payment_cash')}</option>
+                  <option value="bank_transfer">{t('pos_payment_transfer')}</option>
                 </select>
                 <button
                   onClick={() => setShowModal(true)}
@@ -383,7 +388,7 @@ export default function PosPage() {
                       : 'cursor-not-allowed bg-stone-100 text-muted',
                   ].join(' ')}
                 >
-                  Xác nhận thanh toán
+                  {t('pos_btn_confirm_payment')}
                 </button>
               </div>
             </div>
@@ -395,11 +400,11 @@ export default function PosPage() {
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-md rounded-2xl bg-surface p-6 shadow-xl">
-            <h2 className="text-h3 mb-4 font-semibold text-ink">Xác nhận đơn hàng</h2>
+            <h2 className="text-h3 mb-4 font-semibold text-ink">{t('pos_modal_title')}</h2>
             <div className="mb-4 space-y-2">
               {cart.map((item) => (
                 <div key={item.menuItemId} className="flex justify-between text-sm">
-                  <span className="text-muted">{item.name} × {item.quantity}</span>
+                  <span className="text-muted">{getLocalized(item.name, lang)} × {item.quantity}</span>
                   <span className="font-medium text-ink">
                     {formatVND(item.unitPrice * item.quantity)}
                   </span>
@@ -408,11 +413,11 @@ export default function PosPage() {
             </div>
             <div className="border-t border-stone-100 pt-3">
               <div className="flex justify-between">
-                <span className="font-semibold text-ink">Tổng cộng</span>
+                <span className="font-semibold text-ink">{t('lbl_total')}</span>
                 <span className="font-bold text-primary">{formatVND(total)}</span>
               </div>
               <p className="mt-1 text-xs text-muted">
-                Thanh toán: {paymentMethod === 'cash' ? 'Tiền mặt' : 'Chuyển khoản'}
+                {t('pos_payment_label')} {paymentMethod === 'cash' ? t('pos_payment_cash') : t('pos_payment_transfer')}
               </p>
             </div>
             <div className="mt-5 flex gap-3">
@@ -421,7 +426,7 @@ export default function PosPage() {
                 disabled={submitting}
                 className="flex-1 rounded-lg border border-stone-200 py-2.5 text-sm font-medium text-muted hover:bg-stone-50 disabled:opacity-50"
               >
-                Hủy
+                {t('btn_cancel')}
               </button>
               <button
                 onClick={handleConfirm}
@@ -435,7 +440,7 @@ export default function PosPage() {
                 ].join(' ')}
               >
                 {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {submitting ? 'Đang xử lý…' : 'Hoàn thành'}
+                {submitting ? t('pos_btn_processing') : t('pos_btn_done')}
               </button>
             </div>
           </div>
