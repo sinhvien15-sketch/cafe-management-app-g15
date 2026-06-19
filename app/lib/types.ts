@@ -3,6 +3,9 @@ import type { Timestamp } from 'firebase/firestore';
 // Utility: attach a Firestore document ID to any typed document
 export type WithId<T> = T & { id: string };
 
+// Bilingual text — used for MenuItem.name and Ingredient.name
+export type LocalizedText = { vi: string; en: string };
+
 // ── users ─────────────────────────────────────────────────────────────────────
 
 export type UserRole = 'staff' | 'owner';
@@ -24,7 +27,7 @@ export interface RecipeItem {
 }
 
 export interface MenuItem {
-  name: string;
+  name: LocalizedText;    // bilingual: { vi, en }
   price: number;          // VND
   category: Category;
   recipe: RecipeItem[];
@@ -34,13 +37,21 @@ export interface MenuItem {
 
 // ── ingredients ───────────────────────────────────────────────────────────────
 
+export interface Supplier {
+  name:    string;
+  phone:   string;
+  zalo:    string;
+  address: string;
+}
+
 export interface Ingredient {
-  name: string;
+  name: LocalizedText;    // bilingual: { vi, en }
   unit: string;           // "g" | "ml" | "kg" | "l" | "piece"
   currentStock: number;
   minThreshold: number;   // alert threshold
   lastRestockedAt: Timestamp;
   updatedAt: Timestamp;
+  supplier: Supplier | null;  // null for old documents or ingredients without a supplier
 }
 
 // ── orders ────────────────────────────────────────────────────────────────────

@@ -13,14 +13,15 @@ import {
   LogOut,
 } from 'lucide-react';
 import { useAuth } from '@/app/lib/auth-context';
+import { useLanguage } from '@/app/lib/i18n';
 
 // ── Nav definition ────────────────────────────────────────────────────────────
 
 const ALL_NAV = [
-  { href: '/pos',       label: 'Bán hàng',        icon: ShoppingCart, ownerOnly: false },
-  { href: '/inventory', label: 'Kho nguyên liệu',  icon: Package,      ownerOnly: false },
-  { href: '/analytics', label: 'Phân tích',         icon: BarChart3,    ownerOnly: true  },
-  { href: '/menu',      label: 'Quản lý menu',     icon: BookOpen,     ownerOnly: true  },
+  { href: '/pos',       labelKey: 'nav_pos',       icon: ShoppingCart, ownerOnly: false },
+  { href: '/inventory', labelKey: 'nav_inventory',  icon: Package,      ownerOnly: false },
+  { href: '/analytics', labelKey: 'nav_analytics',  icon: BarChart3,    ownerOnly: true  },
+  { href: '/menu',      labelKey: 'nav_menu',       icon: BookOpen,     ownerOnly: true  },
 ];
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -29,6 +30,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const { lang, setLang, t } = useLanguage();
 
   // Staff sees everything except /analytics (ownerOnly = true)
   const navItems = ALL_NAV.filter((item) =>
@@ -64,7 +66,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <button
             className="text-muted hover:text-ink md:hidden"
             onClick={() => setMobileOpen(false)}
-            aria-label="Đóng menu"
+            aria-label={t('aria_close_sidebar')}
           >
             <X className="h-5 w-5" />
           </button>
@@ -80,7 +82,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   <Link
                     href={item.href}
                     onClick={() => setMobileOpen(false)}
-                    title={item.label}
+                    title={t(item.labelKey)}
                     className={[
                       'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors',
                       'md:justify-center lg:justify-start',
@@ -90,7 +92,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     ].join(' ')}
                   >
                     <item.icon className="h-5 w-5 flex-none" />
-                    <span className="md:hidden lg:block">{item.label}</span>
+                    <span className="md:hidden lg:block">{t(item.labelKey)}</span>
                   </Link>
                 </li>
               );
@@ -103,7 +105,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex-none border-t border-stone-200 px-4 py-3 md:hidden lg:block">
             <p className="truncate text-xs font-medium text-ink">{user.name}</p>
             <p className="mt-0.5 text-xs text-muted capitalize">
-              {user.role === 'owner' ? 'Chủ quán' : 'Nhân viên'}
+              {user.role === 'owner' ? t('role_owner') : t('role_staff')}
             </p>
           </div>
         )}
@@ -119,25 +121,53 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <button
               className="text-muted hover:text-ink md:hidden"
               onClick={() => setMobileOpen(true)}
-              aria-label="Mở menu"
+              aria-label={t('aria_open_sidebar')}
             >
               <Menu className="h-6 w-6" />
             </button>
             <span className="text-h3 font-semibold text-primary md:hidden">☕ CaféOS</span>
           </div>
 
-          {/* Right: username + logout */}
+          {/* Right: language toggle + username + logout */}
           <div className="flex items-center gap-4">
+            {/* VI / EN toggle */}
+            <div className="flex items-center rounded-md border border-stone-200 text-xs font-medium overflow-hidden">
+              <button
+                onClick={() => setLang('vi')}
+                className={[
+                  'px-2 py-1 transition-colors',
+                  lang === 'vi'
+                    ? 'bg-primary text-white'
+                    : 'text-muted hover:bg-stone-100',
+                ].join(' ')}
+                aria-label="Tiếng Việt"
+              >
+                VI
+              </button>
+              <button
+                onClick={() => setLang('en')}
+                className={[
+                  'px-2 py-1 transition-colors',
+                  lang === 'en'
+                    ? 'bg-primary text-white'
+                    : 'text-muted hover:bg-stone-100',
+                ].join(' ')}
+                aria-label="English"
+              >
+                EN
+              </button>
+            </div>
+
             <span className="text-sm font-medium text-ink">
               {user?.name ?? '…'}
             </span>
             <button
               onClick={logout}
               className="flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-danger"
-              aria-label="Đăng xuất"
+              aria-label={t('btn_logout')}
             >
               <LogOut className="h-4 w-4" />
-              <span className="hidden sm:inline">Đăng xuất</span>
+              <span className="hidden sm:inline">{t('btn_logout')}</span>
             </button>
           </div>
         </header>

@@ -20,6 +20,7 @@ import { db } from '@/app/lib/firebase';
 import { useAuth } from '@/app/lib/auth-context';
 import { CATEGORIES } from '@/app/lib/constants';
 import type { MenuItem, Ingredient, Category, WithId } from '@/app/lib/types';
+import { getLocalized } from '@/app/lib/i18n';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -55,7 +56,7 @@ function blank(): FormState {
 
 function fromItem(item: WithId<MenuItem>): FormState {
   return {
-    name:      item.name,
+    name:      getLocalized(item.name, 'vi'),
     category:  item.category,
     price:     String(item.price),
     available: item.available,
@@ -197,7 +198,7 @@ export default function MenuPage() {
           const ing = ingredients.find((i) => i.id === r.ingredientId);
           return !ing || ing.currentStock <= 0;
         })
-        .map((r) => ingredients.find((i) => i.id === r.ingredientId)?.name ?? r.ingredientId);
+        .map((r) => getLocalized(ingredients.find((i) => i.id === r.ingredientId)?.name, 'vi') || r.ingredientId);
 
       if (missingNames.length > 0) {
         available = false;
@@ -208,7 +209,7 @@ export default function MenuPage() {
     try {
       if (modal?.kind === 'add') {
         await addDoc(collection(db, 'menu_items'), {
-          name: form.name.trim(),
+          name: { vi: form.name.trim(), en: form.name.trim() },
           category: form.category,
           price,
           available,
@@ -217,7 +218,7 @@ export default function MenuPage() {
         });
       } else if (modal?.kind === 'edit') {
         await updateDoc(doc(db, 'menu_items', modal.item.id), {
-          name: form.name.trim(),
+          name: { vi: form.name.trim(), en: form.name.trim() },
           category: form.category,
           price,
           available,
@@ -245,7 +246,7 @@ export default function MenuPage() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setDeleting(true);
-    const name = deleteTarget.name;
+    const name = getLocalized(deleteTarget.name, 'vi');
     try {
       await deleteDoc(doc(db, 'menu_items', deleteTarget.id));
       setDeleteTarget(null);
@@ -340,7 +341,7 @@ export default function MenuPage() {
                 key={item.id}
                 className="border-b border-stone-100 last:border-0 transition-colors hover:bg-stone-50"
               >
-                <td className="px-4 py-3.5 font-medium text-ink">{item.name}</td>
+                <td className="px-4 py-3.5 font-medium text-ink">{getLocalized(item.name, 'vi')}</td>
                 <td className="px-4 py-3.5 text-muted">{CAT_LABEL[item.category] ?? item.category}</td>
                 <td className="px-4 py-3.5 font-semibold text-ink">{formatVND(item.price)}</td>
                 <td className="px-4 py-3.5">
@@ -550,7 +551,7 @@ export default function MenuPage() {
                               <option value="">— Chọn nguyên liệu —</option>
                               {ingredients.map((ing) => (
                                 <option key={ing.id} value={ing.id}>
-                                  {ing.name} ({ing.unit})
+                                  {getLocalized(ing.name, 'vi')} ({ing.unit})
                                 </option>
                               ))}
                             </select>
@@ -640,7 +641,7 @@ export default function MenuPage() {
             <h2 className="mb-2 text-h3 font-semibold text-ink">Xác nhận xóa</h2>
             <p className="mb-5 text-sm text-muted">
               Bạn có chắc muốn xóa món{' '}
-              <span className="font-semibold text-ink">&ldquo;{deleteTarget.name}&rdquo;</span>?
+              <span className="font-semibold text-ink">&ldquo;{getLocalized(deleteTarget.name, 'vi')}&rdquo;</span>?
               Thao tác này không thể hoàn tác.
             </p>
             <div className="flex gap-3">

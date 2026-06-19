@@ -16,6 +16,7 @@ import {
 import { db, auth } from '@/app/lib/firebase';
 import type { MenuItem, Ingredient, WithId } from '@/app/lib/types';
 import { CATEGORIES, type CartItem } from '@/app/lib/constants';
+import { getLocalized } from '@/app/lib/i18n';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -72,7 +73,7 @@ export default function PosPage() {
         return prev.map((c) =>
           c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c,
         );
-      return [...prev, { menuItemId: item.id, name: item.name, unitPrice: item.price, quantity: 1 }];
+      return [...prev, { menuItemId: item.id, name: getLocalized(item.name, 'vi'), unitPrice: item.price, quantity: 1 }];
     });
     setLastAddedId(item.id);
     setTimeout(() => setLastAddedId(null), 600);
@@ -283,7 +284,7 @@ export default function PosPage() {
                     </span>
                   )}
                   <p className="pr-12 text-sm font-semibold leading-snug text-ink">
-                    {item.name}
+                    {getLocalized(item.name, 'vi')}
                   </p>
                   <p className="mt-2 text-base font-bold text-secondary">
                     {formatVND(item.price)}

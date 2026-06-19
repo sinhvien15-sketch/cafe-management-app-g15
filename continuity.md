@@ -13,6 +13,8 @@ Academic project for the F&B Digital Transformation course — Hanoi School of B
 
 **PROJECT COMPLETE — Live URL: https://cafe-management-app-g15.vercel.app**
 
+**Post-Phase 3 addition — COMPLETE** (`/menu` full CRUD, owner-only, tested 2026-06-19)
+
 ---
 
 ## Phase 1 — Completed
@@ -40,6 +42,20 @@ Academic project for the F&B Digital Transformation course — Hanoi School of B
 - 3.3: Optimization — fixed `onSnapshot` error-flag not clearing on reconnect (bug in `/pos` and `/inventory`); all pages have loading skeletons and friendly error states; Lighthouse `/pos`: Performance 88, FCP 0.2s, LCP 2.2s, TBT 20ms
 - 3.4: Testing checklist — Firefox full flow passed; logout → direct URL redirect confirmed on all 3 routes; staff blocked from `/analytics` via nav AND direct URL (route-level `useEffect` redirect added); all 14 Firestore Rules Playground tests passed
 - 3.5: Deployed to Vercel — full smoke-test on live URL passed (login, order creation, stock deduction, role access, security)
+
+## Post-Phase 3 Addition — Completed
+> This feature was built after the original 3-phase plan was fully complete and deployed.
+> It is not part of MASTER_PLAN.md but was added as an enhancement session on 2026-06-19.
+
+- `/menu` full CRUD page — owner-only (staff redirected to `/pos` via `useEffect` guard + nav hidden in AppShell)
+- Table layout: dish name, category, price, availability badge, recipe ingredient count, Edit + Delete buttons
+- Add/Edit modal: name, category dropdown (from `CATEGORIES` constant), price, available toggle, recipe section
+  - Recipe section: `getDocs` loads ingredients for dropdowns; multi-line `{ ingredientId, quantityUsed }` with per-line delete
+  - Availability check on save: if `available=true` but any recipe ingredient has `currentStock ≤ 0`, auto-sets `available=false` and shows amber warning banner inside modal (modal stays open; owner must close manually after reading)
+- Delete flow: confirmation dialog before `deleteDoc`; existing `orders` unaffected (they store name snapshots, not references)
+- `AppShell.tsx` updated: `/menu` nav item changed to `ownerOnly: true`
+- `npm run build` passed with zero TypeScript errors
+- All 6 test scenarios passed: add with/without recipe, availability warning on low stock, edit recipe, delete without affecting orders, staff blocked via nav and direct URL
 
 ---
 
@@ -94,7 +110,7 @@ app/
     pos/page.tsx         — POS with runTransaction, onSnapshot error-reset on reconnect
     inventory/page.tsx   — Inventory with onSnapshot + restock, error-reset on reconnect
     analytics/page.tsx   — Analytics with getDocs + recharts, owner-only route guard
-    menu/page.tsx        — Menu management (Phase 1 UI)
+    menu/page.tsx        — Menu management — full CRUD with Firestore, owner-only (post-Phase 3)
   login/
     page.tsx             — Real Firebase Auth login
   layout.tsx             — Root layout: AuthProvider wraps everything
