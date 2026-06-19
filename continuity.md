@@ -190,6 +190,15 @@ This caused a TypeScript build error in production when the filtered array was a
 ### 8. Sub-components inside the React tree can call hooks independently
 When a sub-component like `<EmptyState>` is defined outside the main component function but still rendered inside the provider tree (inside `<LanguageProvider>`), it can and should call `useLanguage()` itself — not receive `t` as a prop. This keeps the API clean and avoids prop-drilling. The hook works because the component is rendered inside the provider tree at runtime, even though it is defined outside the main function.
 
+### 9. When aggregating historical records, resolve labels from the live source — not the first snapshot found
+When computing aggregated data from multiple historical records (e.g., grouping today's orders by `menuItemId` to find the top 5 best-selling items), the name/label for each group should come from the **current live data source** (`menu_items`), not from whichever order snapshot happened to be processed first.
+
+The bug: `loadAnalytics()` iterated over orders and, on the first encounter of a `menuItemId`, locked in `item.name` from that order snapshot. If that order was created before the bilingual migration, `item.name` was a plain Vietnamese string — and `getLocalized()` on a plain string correctly returns it unchanged regardless of language. Every subsequent order for the same item only accumulated qty; the name was never updated. The result: even though `menu_items/sinh-to-xoai` had `{ vi: "Sinh tố xoài", en: "Mango Smoothie" }`, analytics always showed "Sinh tố xoài" in EN mode.
+
+**Pattern applied:** `loadAnalytics()` now fetches `menu_items` in the same `Promise.all` call and builds a `menuItemId → name` lookup map. The item map uses `menuNameMap.get(item.menuItemId) ?? item.name` — the live record is always preferred; the order snapshot is only the fallback for items deleted from the menu since the order was placed.
+
+**General rule:** Order/transaction records are append-only immutable history. Their embedded name snapshots capture what existed at the time of creation and should not be trusted as the display label for aggregation views. For aggregation, always join back to the live master record (menu items, products, users) and use the snapshot only as a last resort when the master record no longer exists.
+
 ---
 
 ## File Map (key files)
