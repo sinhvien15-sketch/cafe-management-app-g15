@@ -20,7 +20,7 @@ const ALL_NAV = [
   { href: '/pos',       label: 'Bán hàng',        icon: ShoppingCart, ownerOnly: false },
   { href: '/inventory', label: 'Kho nguyên liệu',  icon: Package,      ownerOnly: false },
   { href: '/analytics', label: 'Phân tích',         icon: BarChart3,    ownerOnly: true  },
-  { href: '/menu',      label: 'Quản lý menu',     icon: BookOpen,     ownerOnly: false },
+  { href: '/menu',      label: 'Quản lý menu',     icon: BookOpen,     ownerOnly: true  },
 ];
 
 // ── Component ─────────────────────────────────────────────────────────────────
