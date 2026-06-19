@@ -22,12 +22,12 @@ import { getLocalized, useLanguage } from '@/app/lib/i18n';
 interface AnalyticsData {
   totalRevenue:    number;
   orderCount:      number;
-  bestSelling:     LocalizedText | string;   // raw from order — resolve with getLocalized at render
+  bestSelling:     LocalizedText | string;   // raw from order — resolved with getLocalized at render
   bestSellingQty:  number;
   lowStockCount:   number;
   hourlyRevenue:   { hour: number; revenue: number }[];
-  topItems:        { name: LocalizedText | string; qty: number }[];  // raw — resolve at render
-  paymentData:     { name: string; value: number }[];
+  topItems:        { name: LocalizedText | string; qty: number }[];  // raw — resolved at render
+  paymentData:     { name: 'cash' | 'bank_transfer'; value: number }[];  // raw keys — resolved at render
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -81,6 +81,8 @@ async function loadAnalytics(): Promise<AnalyticsData> {
   }));
 
   // ── Top 5 items by total quantity sold ─────────────────────────────────────
+  // Groups by menuItemId (not name) — avoids counting the same item twice if
+  // its name appears in different languages across old and new orders.
   const itemMap = new Map<string, { name: LocalizedText | string; qty: number }>();
   for (const o of orders) {
     for (const item of o.items) {
@@ -97,11 +99,14 @@ async function loadAnalytics(): Promise<AnalyticsData> {
   const bestSellingQty = topItems[0]?.qty ?? 0;
 
   // ── Payment method distribution ────────────────────────────────────────────
+  // Store raw keys ('cash' / 'bank_transfer') so the component can translate
+  // them with t() — loadAnalytics() runs outside the React tree and has no
+  // access to the language context.
   const payMap = { cash: 0, bank_transfer: 0 };
   for (const o of orders) payMap[o.paymentMethod]++;
   const paymentData = [
-    { name: 'Tiền mặt',     value: payMap.cash          },
-    { name: 'Chuyển khoản', value: payMap.bank_transfer  },
+    { name: 'cash' as const,          value: payMap.cash         },
+    { name: 'bank_transfer' as const, value: payMap.bank_transfer },
   ].filter((d) => d.value > 0);
 
   // ── Low-stock ingredients ──────────────────────────────────────────────────
@@ -170,11 +175,12 @@ function ChartSkeleton({ height }: { height: number }) {
 }
 
 function EmptyState() {
+  const { t } = useLanguage();
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-stone-200 bg-surface py-24 shadow-card">
       <BarChart2 className="h-16 w-16 text-stone-300" />
-      <p className="mt-4 text-lg font-semibold text-stone-400">Chưa có dữ liệu hôm nay</p>
-      <p className="mt-1 text-sm text-muted">Dữ liệu sẽ xuất hiện khi đơn hàng đầu tiên được tạo</p>
+      <p className="mt-4 text-lg font-semibold text-stone-400">{t('analytics_empty_title')}</p>
+      <p className="mt-1 text-sm text-muted">{t('analytics_empty_sub')}</p>
     </div>
   );
 }
@@ -182,9 +188,9 @@ function EmptyState() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AnalyticsPage() {
-  const router  = useRouter();
-  const { user } = useAuth();
-  const { lang } = useLanguage();
+  const router    = useRouter();
+  const { user }  = useAuth();
+  const { lang, t } = useLanguage();
 
   const [mounted,     setMounted]     = useState(false);
   const [loading,     setLoading]     = useState(true);
@@ -228,11 +234,18 @@ export default function AnalyticsPage() {
   }));
   const displayBestSelling = data ? getLocalized(data.bestSelling, lang) : '—';
 
+  // Resolve payment method keys to translated labels for the Pie chart
+  const displayPaymentData = (data?.paymentData ?? []).map((d) => ({
+    ...d,
+    name: d.name === 'cash' ? t('analytics_payment_cash') : t('analytics_payment_transfer'),
+  }));
+
   const hasData = (data?.orderCount ?? 0) > 0;
 
+  const timeLocale   = lang === 'vi' ? 'vi-VN' : 'en-US';
   const updatedLabel = lastUpdated
-    ? `Cập nhật lúc ${lastUpdated.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
-    : 'Đang tải…';
+    ? `${t('analytics_updated_at')} ${lastUpdated.toLocaleTimeString(timeLocale, { hour: '2-digit', minute: '2-digit' })}`
+    : t('analytics_loading_label');
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -241,17 +254,17 @@ export default function AnalyticsPage() {
       {/* ── Page header ───────────────────────────────────────────────────── */}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-h1 font-semibold text-ink">Phân tích</h1>
-          <p className="mt-1 text-sm text-muted">Dữ liệu hôm nay · {updatedLabel}</p>
+          <h1 className="text-h1 font-semibold text-ink">{t('analytics_title')}</h1>
+          <p className="mt-1 text-sm text-muted">{t('analytics_data_prefix')} {updatedLabel}</p>
         </div>
         <button
           onClick={() => fetch(true)}
           disabled={loading || refreshing}
           className="flex items-center gap-1.5 rounded-lg border border-stone-200 bg-surface px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-stone-50 disabled:opacity-50"
-          aria-label="Làm mới dữ liệu"
+          aria-label={t('analytics_btn_refresh')}
         >
           <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-          Làm mới
+          {t('analytics_btn_refresh')}
         </button>
       </div>
 
@@ -259,35 +272,41 @@ export default function AnalyticsPage() {
       {fetchError && (
         <div className="mb-5 flex items-center gap-2.5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-danger">
           <AlertCircle className="h-4 w-4 flex-none" />
-          Không thể tải dữ liệu — kiểm tra kết nối rồi nhấn Làm mới.
+          {t('analytics_err_load')}
         </div>
       )}
 
       {/* ── KPI cards ─────────────────────────────────────────────────────── */}
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard
-          label="Doanh thu hôm nay"
+          label={t('analytics_kpi_revenue')}
           value={data ? formatVND(data.totalRevenue) : '—'}
           icon={<TrendingUp className="h-5 w-5" />}
           skeleton={loading}
         />
         <KpiCard
-          label="Số đơn hàng"
+          label={t('analytics_kpi_orders')}
           value={data ? String(data.orderCount) : '—'}
           icon={<ShoppingBag className="h-5 w-5" />}
           skeleton={loading}
         />
         <KpiCard
-          label="Món bán chạy nhất"
+          label={t('analytics_kpi_best_seller')}
           value={displayBestSelling}
-          sub={data && data.bestSellingQty > 0 ? `${data.bestSellingQty} đơn` : undefined}
+          sub={data && data.bestSellingQty > 0
+            ? `${data.bestSellingQty} ${t('analytics_kpi_orders_unit')}`
+            : undefined}
           icon={<Award className="h-5 w-5" />}
           skeleton={loading}
         />
         <KpiCard
-          label="Nguyên liệu sắp hết"
-          value={data ? (data.lowStockCount > 0 ? `${data.lowStockCount} mục` : 'Đủ hàng') : '—'}
-          sub={data && data.lowStockCount > 0 ? 'Nhấn để xem chi tiết' : undefined}
+          label={t('analytics_kpi_low_stock')}
+          value={data
+            ? (data.lowStockCount > 0
+                ? `${data.lowStockCount} ${t('analytics_kpi_low_stock_unit')}`
+                : t('analytics_kpi_low_stock_ok'))
+            : '—'}
+          sub={data && data.lowStockCount > 0 ? t('analytics_kpi_low_stock_sub') : undefined}
           icon={<AlertTriangle className="h-5 w-5" />}
           iconBg="bg-warning/10 text-warning"
           href={data && data.lowStockCount > 0 ? '/inventory' : undefined}
@@ -301,7 +320,7 @@ export default function AnalyticsPage() {
 
           {/* Revenue by hour */}
           <div className="rounded-xl border border-stone-100 bg-surface p-5 shadow-card">
-            <h2 className="text-h3 mb-5 font-semibold text-ink">Doanh thu theo giờ</h2>
+            <h2 className="text-h3 mb-5 font-semibold text-ink">{t('analytics_chart_hourly')}</h2>
             {mounted ? (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart
@@ -324,7 +343,10 @@ export default function AnalyticsPage() {
                     width={42}
                   />
                   <Tooltip
-                    formatter={(v) => [typeof v === 'number' ? formatVND(v) : '—', 'Doanh thu']}
+                    formatter={(v) => [
+                      typeof v === 'number' ? formatVND(v) : '—',
+                      t('analytics_tooltip_revenue'),
+                    ]}
                     labelFormatter={(h) => `${h}:00 – ${Number(h) + 1}:00`}
                     contentStyle={TOOLTIP_STYLE}
                   />
@@ -341,7 +363,7 @@ export default function AnalyticsPage() {
 
             {/* Top 5 best-selling items */}
             <div className="rounded-xl border border-stone-100 bg-surface p-5 shadow-card lg:col-span-2">
-              <h2 className="text-h3 mb-5 font-semibold text-ink">Top 5 món bán chạy</h2>
+              <h2 className="text-h3 mb-5 font-semibold text-ink">{t('analytics_chart_top5')}</h2>
               {mounted ? (
                 <ResponsiveContainer width="100%" height={240}>
                   <BarChart
@@ -365,7 +387,10 @@ export default function AnalyticsPage() {
                       tickLine={false}
                     />
                     <Tooltip
-                      formatter={(v) => [typeof v === 'number' ? v + ' đơn' : '—', 'Số lượng']}
+                      formatter={(v) => [
+                        typeof v === 'number' ? `${v} ${t('analytics_tooltip_orders_unit')}` : '—',
+                        t('analytics_tooltip_qty'),
+                      ]}
                       contentStyle={TOOLTIP_STYLE}
                     />
                     <Bar dataKey="qty" fill="#D97706" radius={[0, 4, 4, 0]} maxBarSize={28} />
@@ -378,12 +403,12 @@ export default function AnalyticsPage() {
 
             {/* Payment method ratio */}
             <div className="rounded-xl border border-stone-100 bg-surface p-5 shadow-card">
-              <h2 className="text-h3 mb-5 font-semibold text-ink">Hình thức thanh toán</h2>
+              <h2 className="text-h3 mb-5 font-semibold text-ink">{t('analytics_chart_payment')}</h2>
               {mounted ? (
                 <ResponsiveContainer width="100%" height={240}>
                   <PieChart>
                     <Pie
-                      data={data!.paymentData}
+                      data={displayPaymentData}
                       dataKey="value"
                       nameKey="name"
                       cx="50%"
@@ -391,7 +416,7 @@ export default function AnalyticsPage() {
                       outerRadius={78}
                       strokeWidth={0}
                     >
-                      {data!.paymentData.map((_, i) => (
+                      {displayPaymentData.map((_, i) => (
                         <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                       ))}
                     </Pie>
@@ -403,7 +428,10 @@ export default function AnalyticsPage() {
                       )}
                     />
                     <Tooltip
-                      formatter={(v, name) => [typeof v === 'number' ? v + ' đơn' : '—', name]}
+                      formatter={(v, name) => [
+                        typeof v === 'number' ? `${v} ${t('analytics_tooltip_orders_unit')}` : '—',
+                        name,
+                      ]}
                       contentStyle={TOOLTIP_STYLE}
                     />
                   </PieChart>
